@@ -251,6 +251,39 @@ $sandbox->defineFunc('unlink', function(string $filename, $context = null) {
     return (storage_access_granted($filename) ? unlink(storage_get_realpath($filename), $context) : false);
 });
 
+$sandbox->defineFunc('opendir', function(string $directory, $context = null) {
+    return (storage_access_granted($directory) ? opendir(storage_get_realpath($directory), $context) : false);
+});
+
+$sandbox->defineFunc('dir', function(string $directory, $context = null) {
+    return (storage_access_granted($directory) ? dir(storage_get_realpath($directory), $context) : false);
+});
+
+$sandbox->defineFunc('get_meta_tags', function(string $filename, bool $use_include_path = false) {
+    return (storage_access_granted($filename) ? get_meta_tags(storage_get_realpath($filename), $use_include_path) : false);
+});
+
+$sandbox->defineFunc('rmdir', function(string $directory, $context = null) {
+    return (storage_access_granted($directory) ? rmdir(storage_get_realpath($directory), $context) : false);
+});
+
+$sandbox->defineFunc('mkdir', function(string $directory, int $permissions = 0777, bool $recursive = false, $context = null) {
+    return (storage_access_granted($directory) ? mkdir(storage_get_realpath($directory), $permissions) : false);
+});
+
+$sandbox->defineFunc('rename', function(string $from, string $to, $context = null) {
+    return (storage_access_granted($from) AND storage_access_granted($to) ? rename(storage_get_realpath($from), storage_get_realpath($to), $context) : false);
+});
+
+$sandbox->defineFunc('copy', function(string $from, string $to, $context = null) {
+    return (storage_access_granted($from) AND storage_access_granted($to) ? copy(storage_get_realpath($from), storage_get_realpath($to), $context) : false);
+});
+
+$sandbox->defineFunc('tempnam', function(string $directory, string $prefix) {
+    return (storage_access_granted($directory) ? tempnam(storage_get_realpath($directory), $prefix) : false);
+});
+
+
 // Some functions need to be disabled but should not throw errors inside the sandbox in order for scripts using them not to fail, so they are redefined returning a value which won't cause most scripts to fail...
 // #36 ini_set
 $sandbox->defineFunc('ini_set', function(string $option, string|int|float|bool|null $value) {
@@ -276,8 +309,6 @@ $sandbox->defineFunc('set_include_path', function(string $include_path) {
 $sandbox->defineFunc('ignore_user_abort', function(?bool $enable = null) {
     return false;
 });
-
-// #41 sys_getloadavg
 
 
 // Restrict access to host information
@@ -314,6 +345,18 @@ $sandbox->defineFunc('openlog', function(string $prefix, int $flags, int $facili
     return (SANDBOX_CONFIG['permissions']['hostinfo'] ? openlog($prefix, $flags, $facility) : false);
 });
 
+$sandbox->defineFunc('sys_getloadavg', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? sys_getloadavg() : false);
+});
+
+$sandbox->defineFunc('get_current_user', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? get_current_user() : false);
+});
+
+$sandbox->defineFunc('sys_get_temp_dir', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? sys_get_temp_dir() : 'PHPSandboxVirtStorage');
+});
+
 // Restrict rewriting headers
 $sandbox->defineFunc('header', function(string $header, bool $replace = true, int $response_code = 0) {
     return (SANDBOX_CONFIG['permissions']['headers'] ? header($header, $replace, $response_code) : false);
@@ -330,10 +373,6 @@ $sandbox->defineFunc('setrawcookie', function(string $name, string $value = null
 
 $sandbox->defineFunc('setcookie', function(string $name, string $value = "", int $expires_or_options = 0, string $path = "", string $domain = "", bool $secure = false, bool $httponly = false) {
     return (SANDBOX_CONFIG['permissions']['cookies'] ? setcookie($name, $value, $expires_or_options, $path, $domain, $secure, $httponly) : false);
-});
-
-$sandbox->defineFunc('sys_getloadavg', function() {
-    return false;
 });
 
 // Redefine other network functions
@@ -406,6 +445,27 @@ $sandbox->defineFunc('time_sleep_until', function(float $timestamp) {
     return (SANDBOX_CONFIG['permissions']['sleep'] ? time_sleep_until($timestamp) : false);
 }); 
 
+// Restrict access to executing binaries
+$sandbox->defineFunc('exec', function(string $command, array &$output = null, int &$result_code = null) {
+    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? exec($command, $output, $result_code) : false);
+});
+
+$sandbox->defineFunc('system', function(string $command, int &$result_code = null) {
+    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? system($command, $result_code) : false);
+});
+
+$sandbox->defineFunc('passthru', function(string $command, int &$result_code = null) {
+    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? passthru($command, $result_code) : false);
+});
+
+$sandbox->defineFunc('shell_exec', function(string $command) {
+    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? shell_exec($command) : false);
+});
+
+$sandbox->defineFunc('popen', function(string $command, string $mode) {
+    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? popen($command, $mode) : false);
+});
+
 // Reimplement safe includes by finding and injecting to be included files into the sandbox
 function include_files($code) {
     if(SANDBOX_CONFIG['permissions']['include']) {
@@ -413,7 +473,7 @@ function include_files($code) {
         $includes = preg_grep("~(include|include_once|require|require_once)~", $function_calls);
         foreach($includes AS $include) {
             $filename = preg_replace("~(\"|'|\))~", '', trim(preg_split("~( |\()~", $include)[2]));
-            if(storage_access_granted($filename)) $function_calls[array_search($include, $function_calls)] = str_replace('?>', '', str_replace('<?php', '', file_get_contents(storage_get_realpath($filename))));
+            if(storage_access_granted($filename) AND !isNetworkLocation($filename)) $function_calls[array_search($include, $function_calls)] = str_replace('?>', '', str_replace('<?php', '', file_get_contents(storage_get_realpath($filename))));
         }
         return implode(';', $function_calls);
     }
