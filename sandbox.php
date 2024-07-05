@@ -26,7 +26,7 @@ function isNetworkLocation(string $filename) : bool {
 }
 
 function isAllowedWrapper(string $filename) {
-    return !preg_match("~^(php|zlib|glob|phar|ssh2|rar|ogg|expect)://~", $filename);
+    return !preg_match("~^(php|zlib|glob|phar|ssh2|rar|ogg|expect|unix|udg)://~", $filename);
 }
 
 
@@ -283,6 +283,122 @@ $sandbox->defineFunc('tempnam', function(string $directory, string $prefix) {
     return (storage_access_granted($directory) ? tempnam(storage_get_realpath($directory), $prefix) : false);
 });
 
+$sandbox->defineFunc('is_writable', function(string $filename) {
+    return (storage_access_granted($filename) ? is_writable(storage_get_realpath($filename)) : false);
+});
+
+$sandbox->defineFunc('is_writeable', function(string $filename) {
+    return (storage_access_granted($filename) ? is_writeable(storage_get_realpath($filename)) : false);
+});
+
+$sandbox->defineFunc('is_readable', function(string $filename) {
+    return (storage_access_granted($filename) ? is_readable(storage_get_realpath($filename)) : false);
+});
+
+$sandbox->defineFunc('is_executable', function(string $filename) {
+    return (storage_access_granted($filename) ? is_executable(storage_get_realpath($filename)) : false);
+});
+
+$sandbox->defineFunc('is_dir', function(string $filename) {
+    return (storage_access_granted($filename) ? is_dir(storage_get_realpath($filename)) : false);
+});
+
+$sandbox->defineFunc('is_link', function(string $filename) {
+    return (storage_access_granted($filename) ? is_link(storage_get_realpath($filename)) : false);
+});
+
+$sandbox->defineFunc('stat', function(string $filename) {
+    return (storage_access_granted($filename) ? stat(storage_get_realpath($filename)) : false);
+});
+
+$sandbox->defineFunc('lstat', function(string $filename) {
+    return (storage_access_granted($filename) ? lstat(storage_get_realpath($filename)) : false);
+});
+
+$sandbox->defineFunc('chown', function(string $filename, string|int $user) {
+    return (storage_access_granted($filename) ? chown(storage_get_realpath($filename), $user) : false);
+});
+
+$sandbox->defineFunc('chgrp', function(string $filename, string|int $group) {
+    return (storage_access_granted($filename) ? chgrp(storage_get_realpath($filename), $group) : false);
+});
+
+$sandbox->defineFunc('lchown', function(string $filename, string|int $user) {
+    return (storage_access_granted($filename) ? lchown(storage_get_realpath($filename), $user) : false);
+});
+
+$sandbox->defineFunc('lchgrp', function(string $filename, string|int $group) {
+    return (storage_access_granted($filename) ? lchgrp(storage_get_realpath($filename), $group) : false);
+});
+
+$sandbox->defineFunc('chmod', function(string $filename, int $permissions) {
+    return (storage_access_granted($filename) ? chmod(storage_get_realpath($filename), $permissions) : false);
+});
+
+$sandbox->defineFunc('touch', function(string $filename, ?int $mtime = null, ?int $atime = null) {
+    return (storage_access_granted($filename) ? touch(storage_get_realpath($filename), $mtime, $atime) : false);
+});
+
+$sandbox->defineFunc('disk_total_space', function(string $directory) {
+    return (storage_access_granted($directory) AND SANDBOX_CONFIG['permissions']['hostinfo'] ? disk_total_space(storage_get_realpath($directory)) : false);
+});
+
+$sandbox->defineFunc('disk_free_space', function(string $directory) {
+    return (storage_access_granted($directory) AND SANDBOX_CONFIG['permissions']['hostinfo'] ? disk_free_space(storage_get_realpath($directory)) : false);
+});
+
+$sandbox->defineFunc('diskfreespace', function(string $directory) {
+    return (storage_access_granted($directory) AND SANDBOX_CONFIG['permissions']['hostinfo'] ? diskfreespace(storage_get_realpath($directory)) : false);
+});
+
+$sandbox->defineFunc('fsockopen', function(string $hostname, int $port = -1, int &$error_code = null, string &$error_message = null, ?float $timeout = null) {
+    return (storage_access_granted($hostname) ? fsockopen(storage_get_realpath($hostname), $port, $error_code, $error_message, $timeout) : false);
+});
+
+$sandbox->defineFunc('pfsockopen', function(string $hostname, int $port = -1, int &$error_code = null, string &$error_message = null, ?float $timeout = null) {
+    return (storage_access_granted($hostname) ? pfsockopen(storage_get_realpath($hostname), $port, $error_code, $error_message, $timeout) : false);
+});
+
+$sandbox->defineFunc('getimagesize', function(string $filename, array &$image_info = null) {
+    return (storage_access_granted($hostname) ? getimagesize(storage_get_realpath($filename), $image_info) : false);
+});
+
+$sandbox->defineFunc('iptcembed', function(string $iptc_data, string $filename, int $spool = 0) {
+    return (storage_access_granted($filename) ? iptcembed($iptc_data, storage_get_realpath($filename), $spool) : false);
+});
+
+$sandbox->defineFunc('readlink', function(string $path) {
+    return (storage_access_granted($path) ? readlink(storage_get_realpath($path)) : false);
+});
+
+$sandbox->defineFunc('linkinfo', function(string $path) {
+    return (storage_access_granted($path) ? linkinfo(storage_get_realpath($path)) : false);
+});
+
+$sandbox->defineFunc('symlink', function(string $target, string $link) {
+    return (storage_access_granted($target) AND storage_access_granted($link) ? symlink(storage_get_realpath($target), storage_get_realpath($link)) : false);
+});
+
+$sandbox->defineFunc('link', function(string $target, string $link) {
+    return (storage_access_granted($target) AND storage_access_granted($link) ? link(storage_get_realpath($target), storage_get_realpath($link)) : false);
+});
+
+$sandbox->defineFunc('bzopen', function(string|resource $file, string $mode) {
+    return ((storage_access_granted($file) OR get_resource_type($file) == 'stream') ? bzopen((get_resource_type($file) == 'stream' ? $file : storage_get_realpath($file)), $mode): false);
+});
+
+$sandbox->defineFunc('ftp_get', function(FTP\Connection $ftp, string $local_filename, string $remote_filename, int $mode = FTP_BINARY, int $offset = 0) {
+    return (storage_access_granted($local_filename) AND SANDBOX_CONFIG['permissions']['network'] ? ftp_get($ftp, storage_get_realpath($local_filename), $remote_filename, $mode, $offset) : false);
+});
+
+$sandbox->defineFunc('ftp_put', function(FTP\Connection $ftp, string $remote_filename, string $local_filename, int $mode = FTP_BINARY, int $offset = 0) {
+    return (storage_access_granted($local_filename) AND SANDBOX_CONFIG['permissions']['network'] ? ftp_put($ftp, $remote_filename, storage_get_realpath($local_filename), $mode, $offset) : false);
+});
+
+// Restrict ability to send emails
+$sandbox->defineFunc('mail', function(string $to, string $subject, string $message, array|string $additional_headers = [], string $additional_params = "") {
+    return (SANDBOX_CONFIG['permissions']['mail'] ? mail($to, $subject, $message, $additional_headers, $additional_params) : false);
+});
 
 // Some functions need to be disabled but should not throw errors inside the sandbox in order for scripts using them not to fail, so they are redefined returning a value which won't cause most scripts to fail...
 // #36 ini_set
@@ -357,6 +473,27 @@ $sandbox->defineFunc('sys_get_temp_dir', function() {
     return (SANDBOX_CONFIG['permissions']['hostinfo'] ? sys_get_temp_dir() : 'PHPSandboxVirtStorage');
 });
 
+$sandbox->defineFunc('phpinfo', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? phpinfo() : 'SandyPHP');
+});
+
+$sandbox->defineFunc('phpversion', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? phpversion() : 'SandyPHP 0.0.0beta');
+});
+
+$sandbox->defineFunc('phpcredits', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? phpcredits() : 'Credits can be found on the PHP website, this feature is disabled for security reasons, big thanks to the PHP guys anyway!');
+});
+
+$sandbox->defineFunc('php_sapi_name', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? php_sapi_name() : false);
+});
+
+$sandbox->defineFunc('php_uname', function(string $mode = "a") {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? php_uname($mode) : 'SandyPHP');
+});
+
+
 // Restrict rewriting headers
 $sandbox->defineFunc('header', function(string $header, bool $replace = true, int $response_code = 0) {
     return (SANDBOX_CONFIG['permissions']['headers'] ? header($header, $replace, $response_code) : false);
@@ -426,6 +563,32 @@ $sandbox->defineFunc('getmxrr', function(string $hostname, array &$hosts, array 
     return (SANDBOX_CONFIG['permissions']['network'] ? getmxrr($hostname,  $hosts, $weights) : false);
 });
 
+// stream_socket_client
+$sandbox->defineFunc('stream_socket_client', function(string $address, int &$error_code = null, string &$error_message = null, ?float $timeout = null, int $flags = STREAM_CLIENT_CONNECT, ?resource $context = null) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? stream_socket_client($address,  $error_code, $error_message, $timeout, $flags, $context) : false);
+});
+
+// stream_socket_server
+$sandbox->defineFunc('stream_socket_server', function(string $address, int &$error_code = null, string &$error_message = null, int $flags = STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, ?resource $context = null) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? stream_socket_server($address,  $error_code, $error_message, $flags, $context) : false);
+});
+
+// curl_init
+$sandbox->defineFunc('curl_init', function(?string $url = null) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? curl_init($url) : false);
+});
+
+// ftp_connect
+$sandbox->defineFunc('ftp_connect', function(string $hostname, int $port = 21, int $timeout = 90) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? ftp_connect($hostname, $port, $timeout) : false);
+});
+
+// ftp_ssl_connect
+$sandbox->defineFunc('ftp_ssl_connect', function(string $hostname, int $port = 21, int $timeout = 90) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? ftp_ssl_connect($hostname, $port, $timeout) : false);
+});
+
+
 
 // Redefine sleep functions, as sleeping might be disabled
 $sandbox->defineFunc('sleep', function(int $seconds) {
@@ -466,6 +629,10 @@ $sandbox->defineFunc('popen', function(string $command, string $mode) {
     return (SANDBOX_CONFIG['permissions']['bin_exec'] ? popen($command, $mode) : false);
 });
 
+$sandbox->defineFunc('proc_open', function(array|string $command, array $descriptor_spec, array &$pipes, ?string $cwd = null, ?array $env_vars = null,?array $options = null) {
+    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? proc_open($command, $descriptor_spec, $pipes, $cwd, $env_vars, $options) : false);
+});
+
 // Reimplement safe includes by finding and injecting to be included files into the sandbox
 function include_files($code) {
     if(SANDBOX_CONFIG['permissions']['include']) {
@@ -493,7 +660,7 @@ $sandbox->defineFunc('zend_version', function() {
 });
 
 
-$sandbox->execute(include_files('<?php require "test.php"; echo gethostname(); ?>'));
+$sandbox->execute(include_files('<?php require "test.php"; phpinfo(); ?>'));
 
 ob_end_flush();
 
