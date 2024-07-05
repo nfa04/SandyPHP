@@ -16,6 +16,7 @@ $sandbox = new \PHPSandbox\PHPSandbox();
 
 define('SANDBOX_CONFIG', json_decode(file_get_contents('exampleconfig.json'), true));
 define('SANDBOX_WHITELIST', json_decode(file_get_contents('whitelist.json'), true));
+define('SANDBOX_SUPPORTED_PDO_DRIVERS', array());
 
 function studezy_version_info() {
    return 'StudEzy 0.0.0beta';
@@ -395,9 +396,21 @@ $sandbox->defineFunc('ftp_put', function(FTP\Connection $ftp, string $remote_fil
     return (storage_access_granted($local_filename) AND SANDBOX_CONFIG['permissions']['network'] ? ftp_put($ftp, $remote_filename, storage_get_realpath($local_filename), $mode, $offset) : false);
 });
 
+$sandbox->defineFunc('ftp_append', function(FTP\Connection $ftp, string $remote_filename, string $local_filename, int $mode = FTP_BINARY) {
+    return (storage_access_granted($local_filename) AND SANDBOX_CONFIG['permissions']['network'] ? ftp_append($ftp, $remote_filename, storage_get_realpath($local_filename), $mode) : false);
+});
+
+$sandbox->defineFunc('ftp_nb_put', function(FTP\Connection $ftp, string $remote_filename, string $local_filename, int $mode = FTP_BINARY, int $offset = 0) {
+    return (storage_access_granted($local_filename) AND SANDBOX_CONFIG['permissions']['network'] ? ftp_nb_put($ftp, $remote_filename, storage_get_realpath($local_filename), $mode, $offset) : false);
+});
+
 // Restrict ability to send emails
 $sandbox->defineFunc('mail', function(string $to, string $subject, string $message, array|string $additional_headers = [], string $additional_params = "") {
     return (SANDBOX_CONFIG['permissions']['mail'] ? mail($to, $subject, $message, $additional_headers, $additional_params) : false);
+});
+
+$sandbox->defineFunc('mb_send_mail', function(string $to, string $subject, string $message, array|string $additional_headers = [], string $additional_params = "") {
+    return (SANDBOX_CONFIG['permissions']['mail'] ? mb_send_mail($to, $subject, $message, $additional_headers, $additional_params) : false);
 });
 
 // Some functions need to be disabled but should not throw errors inside the sandbox in order for scripts using them not to fail, so they are redefined returning a value which won't cause most scripts to fail...
@@ -424,6 +437,13 @@ $sandbox->defineFunc('set_include_path', function(string $include_path) {
 // #40 ignore_user_abort
 $sandbox->defineFunc('ignore_user_abort', function(?bool $enable = null) {
     return false;
+});
+
+$sandbox->defineFunc('pdo_drivers', function() {
+    return array_map(function($driver) {
+        if(in_array($driver, SANDBOX_SUPPORTED_PDO_DRIVERS)) return 'SandyPHPVirtPDODriver for '.$driver;
+        return 'No SandyPHPVirtPDODriver for '.$driver;
+    }, pdo_drivers());
 });
 
 
@@ -660,9 +680,9 @@ $sandbox->defineFunc('zend_version', function() {
 });
 
 
-$sandbox->execute(include_files('<?php require "test.php"; phpinfo(); ?>'));
+$sandbox->execute(include_files('<?php require "test.php";  var_dump(pdo_drivers()); phpinfo(); ?>'));
 
 ob_end_flush();
 
-var_dump(memory_get_peak_usage() / 1000);
+var_dump(memory_get_peak_usage() / 1000000);
 ?>
