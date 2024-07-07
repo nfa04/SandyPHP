@@ -10,7 +10,7 @@ error_reporting(E_ALL);
 require '../../classes/user.php';
 require 'vendor/autoload.php';
 
-ob_start();
+ob_start(); // Start an output buffer in order for the script to be able to send custom headers (if it's allowed to)
 
 $sandbox = new \PHPSandbox\PHPSandbox();
 
@@ -55,7 +55,7 @@ function storage_get_realpath($filename) {
 
 $sandbox->whitelistFunc('studezy_version_info');
 $sandbox->whitelistFunc(SANDBOX_WHITELIST);
-$sandbox->allow_includes = true; //SANDBOX_CONFIG['permissions']['include'] | false;
+$sandbox->allow_includes = false; //SANDBOX_CONFIG['permissions']['include'] | false;
 $sandbox->allow_escaping = SANDBOX_CONFIG['permissions']['escape'] | false;
 $sandbox->allow_functions = SANDBOX_CONFIG['permissions']['functions'] | false;
 $sandbox->allow_aliases = true;
@@ -513,6 +513,93 @@ $sandbox->defineFunc('php_uname', function(string $mode = "a") {
     return (SANDBOX_CONFIG['permissions']['hostinfo'] ? php_uname($mode) : 'SandyPHP');
 });
 
+$sandbox->defineFunc('posix_getpid', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getpid() : 1801332415715); // Number is for the letters in SandyPHP
+});
+
+$sandbox->defineFunc('posix_getppid', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getppid() : 1801332415715); // Number is for the letters in SandyPHP
+});
+
+$sandbox->defineFunc('posix_getuid', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getuid() : 'SandyPHPVirtUser');
+});
+
+$sandbox->defineFunc('posix_setuid', function(int $user_id) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setuid($user_id) : false);
+});
+
+$sandbox->defineFunc('posix_geteuid', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_geteuid() : 'SandyPHPVirtUser');
+});
+
+$sandbox->defineFunc('posix_seteuid', function(int $user_id) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_seteuid($user_id) : false);
+});
+
+$sandbox->defineFunc('posix_getgid', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getgid() : false);
+});
+
+$sandbox->defineFunc('posix_setgid', function(int $group_id) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setgid($group_id) : false);
+});
+
+$sandbox->defineFunc('posix_getegid', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getegid() : false);
+});
+
+$sandbox->defineFunc('posix_setegid', function(int $group_id) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setegid($group_id) : false);
+});
+
+$sandbox->defineFunc('posix_getgroups', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getgroups() : false);
+});
+
+$sandbox->defineFunc('posix_getlogin', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getlogin() : false);
+});
+
+$sandbox->defineFunc('posix_getpgrp', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getpgrp() : false);
+});
+
+$sandbox->defineFunc('posix_setsid', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setsid() : false);
+});
+
+$sandbox->defineFunc('posix_setpgid', function(int $process_id, int $process_group_id) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setpgid($process_id, $process_group_id) : false);
+});
+
+$sandbox->defineFunc('posix_getpgid', function(int $process_id) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getpgid($process_id) : false);
+});
+
+$sandbox->defineFunc('posix_getsid', function(int $process_id) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getsid($process_id) : false);
+});
+
+$sandbox->defineFunc('posix_uname', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_uname() : false);
+});
+
+$sandbox->defineFunc('posix_times', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_times() : false);
+});
+
+$sandbox->defineFunc('posix_ctermid', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_ctermid() : false);
+});
+
+$sandbox->defineFunc('posix_ttyname', function(resource|int $file_descriptor) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_ttyname($file_descriptor) : false);
+});
+
+$sandbox->defineFunc('posix_isatty', function(resource|int $file_descriptor) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_isatty($file_descriptor) : false);
+});
 
 // Restrict rewriting headers
 $sandbox->defineFunc('header', function(string $header, bool $replace = true, int $response_code = 0) {
@@ -653,6 +740,12 @@ $sandbox->defineFunc('proc_open', function(array|string $command, array $descrip
     return (SANDBOX_CONFIG['permissions']['bin_exec'] ? proc_open($command, $descriptor_spec, $pipes, $cwd, $env_vars, $options) : false);
 });
 
+// Restrict access to interprocess communication
+$sandbox->defineFunc('posix_kill', function(int $process_id, int $signal) {
+    return (SANDBOX_CONFIG['permissions']['proc_com'] ? posix_kill($process_id, $signal) : false);
+});
+
+
 // Reimplement safe includes by finding and injecting to be included files into the sandbox
 function include_files($code) {
     if(SANDBOX_CONFIG['permissions']['include']) {
@@ -660,7 +753,7 @@ function include_files($code) {
         $includes = preg_grep("~(include|include_once|require|require_once)~", $function_calls);
         foreach($includes AS $include) {
             $filename = preg_replace("~(\"|'|\))~", '', trim(preg_split("~( |\()~", $include)[2]));
-            if(storage_access_granted($filename) AND !isNetworkLocation($filename)) $function_calls[array_search($include, $function_calls)] = str_replace('?>', '', str_replace('<?php', '', file_get_contents(storage_get_realpath($filename))));
+            if(storage_access_granted($filename) AND !isNetworkLocation($filename)) $function_calls[array_search($include, $function_calls)] = preg_replace('~(require|require_once|include|include_once) \(?".*"\)?~', str_replace('?>', '', str_replace('<?php', '', file_get_contents(storage_get_realpath($filename)))), $include);
         }
         return implode(';', $function_calls);
     }
