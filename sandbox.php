@@ -404,6 +404,18 @@ $sandbox->defineFunc('ftp_nb_put', function(FTP\Connection $ftp, string $remote_
     return (storage_access_granted($local_filename) AND SANDBOX_CONFIG['permissions']['network'] ? ftp_nb_put($ftp, $remote_filename, storage_get_realpath($local_filename), $mode, $offset) : false);
 });
 
+$sandbox->defineFunc('posix_mkfifo', function(string $filename, int $permissions) {
+    return (storage_access_granted($filename) ? posix_mkfifo(storage_get_realpath($filename), $permissions) : false);
+});
+
+$sandbox->defineFunc('posix_mknod', function(string $filename, int $flags, int $major = 0, int $minor = 0) {
+    return (storage_access_granted($filename) ? posix_mknod(storage_get_realpath($filename), $flags, $major, $minor) : false);
+});
+
+$sandbox->defineFunc('posix_access', function(string $filename, int $flags = 0) {
+    return (storage_access_granted($filename) ? posix_mknod(storage_get_realpath($filename), $flags) : false);
+});
+
 // Restrict ability to send emails
 $sandbox->defineFunc('mail', function(string $to, string $subject, string $message, array|string $additional_headers = [], string $additional_params = "") {
     return (SANDBOX_CONFIG['permissions']['mail'] ? mail($to, $subject, $message, $additional_headers, $additional_params) : false);
@@ -599,6 +611,22 @@ $sandbox->defineFunc('posix_ttyname', function(resource|int $file_descriptor) {
 
 $sandbox->defineFunc('posix_isatty', function(resource|int $file_descriptor) {
     return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_isatty($file_descriptor) : false);
+});
+
+$sandbox->defineFunc('posix_initgroups', function(string $username, int $group_id) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_initgroups($username, $group_id) : false);
+});
+
+$sandbox->defineFunc('posix_getcwd', function() {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getcwd() : false);
+});
+
+$sandbox->defineFunc('posix_getgrnam', function(string $name) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getgrnam($name) : false);
+});
+
+$sandbox->defineFunc('posix_getgrgid', function(string $group_id) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getgrgid($group_id) : false);
 });
 
 // Restrict rewriting headers
