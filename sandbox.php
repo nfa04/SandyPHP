@@ -629,6 +629,43 @@ $sandbox->defineFunc('posix_getgrgid', function(string $group_id) {
     return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getgrgid($group_id) : false);
 });
 
+$sandbox->defineFunc('posix_getpwnam', function(string $username) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getpwnam($username) : false);
+});
+
+$sandbox->defineFunc('posix_getpwuid', function(string $user_id) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getpwuid($user_id) : false);
+});
+
+$sandbox->defineFunc('posix_getrlimit', function(?int $resource = null) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getrlimit($resource) : false);
+});
+
+$sandbox->defineFunc('posix_setrlimit', function(int $resource, int $soft_limit, int $hard_limit) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setrlimit($resource, $soft_limit, $hard_limit) : false);
+});
+
+// Restrict shared memory usage
+$sandbox->defineFunc('shmop_open', function(int $key, string $mode, int $permissions, int $size) {
+    return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_open($key, $mode, $permissions, $size) : false);
+});
+
+$sandbox->defineFunc('shmop_read', function(Shmop $shmop, int $offset, int $size) {
+    return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_read($shmop, $offset, $size) : false);
+});
+
+$sandbox->defineFunc('shmop_size', function(Shmop $shmop) {
+    return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_read($shmop) : false);
+});
+
+$sandbox->defineFunc('shmop_write', function(Shmop $shmop, string $data, int $offset) {
+    return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_read($shmop, $data, $offset) : false);
+});
+
+$sandbox->defineFunc('shmop_delete', function(Shmop $shmop) {
+    return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_read($shmop) : false);
+});
+
 // Restrict rewriting headers
 $sandbox->defineFunc('header', function(string $header, bool $replace = true, int $response_code = 0) {
     return (SANDBOX_CONFIG['permissions']['headers'] ? header($header, $replace, $response_code) : false);
@@ -723,7 +760,29 @@ $sandbox->defineFunc('ftp_ssl_connect', function(string $hostname, int $port = 2
     return (SANDBOX_CONFIG['permissions']['network'] ? ftp_ssl_connect($hostname, $port, $timeout) : false);
 });
 
+$sandbox->defineFunc('socket_select', function(?array &$read, ?array &$write, ?array &$except, ?int $seconds, int $microseconds = 0) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? socket_select($read, $write, $except, $seconds, $microseconds) : false);
+});
 
+$sandbox->defineFunc('socket_create_listen', function(int $port, int $backlog = SOMAXCONN) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? socket_create_listen($port, $backlog) : false);
+});
+
+$sandbox->defineFunc('socket_create', function(int $domain, int $type, int $protocol) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? socket_create($domain, $type, $protocol) : false);
+});
+
+$sandbox->defineFunc('socket_create_pair', function(int $domain, int $type, int $protocol, array &$pair) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? socket_create_pair($domain, $type, $protocol, $pair) : false);
+});
+
+$sandbox->defineFunc('socket_addrinfo_bind', function(AddressInfo $address) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? socket_addrinfo_bind($address) : false);
+});
+
+$sandbox->defineFunc('socket_addrinfo_connect', function(AddressInfo $address) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? socket_addrinfo_connect($address) : false);
+});
 
 // Redefine sleep functions, as sleeping might be disabled
 $sandbox->defineFunc('sleep', function(int $seconds) {
@@ -773,6 +832,17 @@ $sandbox->defineFunc('posix_kill', function(int $process_id, int $signal) {
     return (SANDBOX_CONFIG['permissions']['proc_com'] ? posix_kill($process_id, $signal) : false);
 });
 
+$sandbox->defineFunc('msg_get_queue', function(int $key, int $permissions = 0666) {
+    return (SANDBOX_CONFIG['permissions']['proc_com'] ? msg_get_queue($key, $permissions) : false);
+});
+
+$sandbox->defineFunc('msg_queue_exists', function(int $key) {
+    return (SANDBOX_CONFIG['permissions']['proc_com'] ? msg_queue_exists($key) : false);
+});
+
+$sandbox->defineFunc('sem_get', function(int $key, int $max_acquire = 1, int $permissions = 0666, bool $auto_release = true) {
+    return (SANDBOX_CONFIG['permissions']['proc_com'] ? sem_get($key, $max_acquire, $permissions, $auto_release) : false);
+});
 
 // Reimplement safe includes by finding and injecting to be included files into the sandbox
 function include_files($code) {
