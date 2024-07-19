@@ -1,14 +1,13 @@
 <?php
 
-namespace SandboxModules;
+require 'vendor/autoload.php';
+require 'vendor/greenlion/php-sql-parser/src/PHPSQLParser/PHPSQLParser.php';
+require 'SandyPHPVirtPDODriver.php';
 
 ini_set('display_errors', true);
 error_reporting(E_ALL);
 
 // This code defines sandboxes in which extensions to StudEzy will be running...
-
-require '../../classes/user.php';
-require 'vendor/autoload.php';
 
 ob_start(); // Start an output buffer in order for the script to be able to send custom headers (if it's allowed to)
 
@@ -16,7 +15,7 @@ $sandbox = new \PHPSandbox\PHPSandbox();
 
 define('SANDBOX_CONFIG', json_decode(file_get_contents('exampleconfig.json'), true));
 define('SANDBOX_WHITELIST', json_decode(file_get_contents('whitelist.json'), true));
-define('SANDBOX_SUPPORTED_PDO_DRIVERS', array());
+define('SANDBOX_SUPPORTED_PDO_DRIVERS', array('mysql', 'sqlite'));
 
 function studezy_version_info() {
    return 'StudEzy 0.0.0beta';
@@ -845,7 +844,7 @@ $sandbox->defineFunc('sem_get', function(int $key, int $max_acquire = 1, int $pe
 });
 
 // Reimplement safe includes by finding and injecting to be included files into the sandbox
-function include_files($code) {
+function static_include_files($code) {
     if(SANDBOX_CONFIG['permissions']['include']) {
         $function_calls = explode(';', $code);
         $includes = preg_grep("~(include|include_once|require|require_once)~", $function_calls);
@@ -864,14 +863,18 @@ $sandbox->defineFunc('include_once', function() {});
 $sandbox->defineFunc('require', function() {});
 $sandbox->defineFunc('require_once', function() {});
 
+$sandbox->blacklistClass('PDO');
+
 
 // redefine zend_version function
 $sandbox->defineFunc('zend_version', function() {
-    return 'SandboxedPHP based on zend: '.zend_version();
+    return 'SandyPHP based on zend: '.zend_version();
 });
 
+$sandbox->blacklistClass(['PDO' => 'PDO']);
+$sandbox->defineClass('PDO', 'SandyPHPVirtPDODriver');
 
-$sandbox->execute(include_files('<?php require "test.php";  var_dump(pdo_drivers()); phpinfo(); ?>'));
+$sandbox->execute(static_include_files('<?php require "test.php"; var_dump(new PDO("mysql:host=localhost;dbname=testdb;charset=utf8mb4")); ?>'));
 
 ob_end_flush();
 
