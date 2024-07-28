@@ -10,7 +10,8 @@
     "database": {
         "mysql": {
             "hosts": ["localhost"],
-            "database_names": ["testdb"]
+            "database_names": ["testdb"],
+            "tables": ["*"]
         }
     }
  }

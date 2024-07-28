@@ -1,7 +1,6 @@
 <?php
 
 require 'vendor/autoload.php';
-require 'vendor/greenlion/php-sql-parser/src/PHPSQLParser/PHPSQLParser.php';
 require 'SandyPHPVirtPDODriver.php';
 
 ini_set('display_errors', true);
@@ -874,7 +873,7 @@ $sandbox->defineFunc('zend_version', function() {
 $sandbox->blacklistClass(['PDO' => 'PDO']);
 $sandbox->defineClass('PDO', 'SandyPHPVirtPDODriver');
 
-$sandbox->execute(static_include_files('<?php require "test.php"; var_dump(new PDO("mysql:host=localhost;dbname=testdb;charset=utf8mb4")); ?>'));
+$sandbox->execute(static_include_files('<?php $pdo = new PDO("mysql:host=localhost;dbname=testdb;charset=utf8mb4"); var_dump($pdo->query("SELECT * FROM a")); ?>'));
 
 ob_end_flush();
 

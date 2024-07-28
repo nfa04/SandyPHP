@@ -1,6 +1,6 @@
 {
     "require": {
         "corveda/php-sandbox": "^3.1",
-        "greenlion/php-sql-parser": "^4.6"
+        "phpmyadmin/sql-parser": "^5.9"
     }
 }
