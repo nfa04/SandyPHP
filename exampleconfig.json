@@ -1,0 +1,16 @@
+ {
+    "id": "example@sandyphp",
+    "permissions": {
+        "escape": true,
+        "functions": true,
+        "storage": ["*"],
+        "network": false,
+        "include": true
+    },
+    "database": {
+        "mysql": {
+            "hosts": ["localhost"],
+            "database_names": ["testdb"]
+        }
+    }
+ }
