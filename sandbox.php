@@ -411,8 +411,17 @@ $sandbox->defineFunc('posix_mknod', function(string $filename, int $flags, int $
 });
 
 $sandbox->defineFunc('posix_access', function(string $filename, int $flags = 0) {
-    return (storage_access_granted($filename) ? posix_mknod(storage_get_realpath($filename), $flags) : false);
+    return (storage_access_granted($filename) ? posix_access(storage_get_realpath($filename), $flags) : false);
 });
+
+$sandbox->defineFunc('chdir', function(string $directory) {
+    return (storage_access_granted($directory) ? chdir(storage_get_realpath($directory)) : false);
+});
+
+$sandbox->defineFunc('scandir', function(string $directory, int $sorting_order = SCANDIR_SORT_ASCENDING, ?resource $context = null) {
+    return (storage_access_granted($directory) ? scandir(storage_get_realpath($directory), $sorting_order, $context) : false);
+});
+
 
 // Restrict ability to send emails
 $sandbox->defineFunc('mail', function(string $to, string $subject, string $message, array|string $additional_headers = [], string $additional_params = "") {
@@ -643,6 +652,10 @@ $sandbox->defineFunc('posix_setrlimit', function(int $resource, int $soft_limit,
     return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setrlimit($resource, $soft_limit, $hard_limit) : false);
 });
 
+$sandbox->defineFunc('getrusage', function(int $mode = 0) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? getrusage($mode) : false);
+});
+
 // Restrict shared memory usage
 $sandbox->defineFunc('shmop_open', function(int $key, string $mode, int $permissions, int $size) {
     return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_open($key, $mode, $permissions, $size) : false);
@@ -671,6 +684,10 @@ $sandbox->defineFunc('header', function(string $header, bool $replace = true, in
 
 $sandbox->defineFunc('http_response_code', function(int $response_code = 0) {
     return (SANDBOX_CONFIG['permissions']['headers'] ? http_response_code($response_code) : false);
+});
+
+$sandbox->defineFunc('get_headers', function(string $url, bool $associative = false, ?resource $context = null) {
+    return (SANDBOX_CONFIG['permissions']['headers'] ? get_headers($url, $associative = false, $context) : false);
 });
 
 // Restrict setting cookies
@@ -840,6 +857,10 @@ $sandbox->defineFunc('msg_queue_exists', function(int $key) {
 
 $sandbox->defineFunc('sem_get', function(int $key, int $max_acquire = 1, int $permissions = 0666, bool $auto_release = true) {
     return (SANDBOX_CONFIG['permissions']['proc_com'] ? sem_get($key, $max_acquire, $permissions, $auto_release) : false);
+});
+
+$sandbox->defineFunc('stream_socket_pair', function(int $domain, int $type, int $protocol) {
+    return (SANDBOX_CONFIG['permissions']['proc_com'] ? stream_socket_pair($domain, $type, $protocol) : false);
 });
 
 // Reimplement safe includes by finding and injecting to be included files into the sandbox
