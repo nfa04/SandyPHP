@@ -42,6 +42,16 @@ final class SandyPHPVirtPDODriver extends PDO {
         return ($this->checkQuery($sql) ? parent::query($sql, $fetchMode, $fetchModeArgs) : false);
     }
 
+    #[\Override]
+    public function exec(string $statement) {
+        return ($this->checkQuery($statement) ? parent::exec($statement) : false);
+    }
+
+    #[\Override]
+    public function prepare(string $query, array $options = []) {
+        return ($this->checkQuery($query) ? parent::prepare($query, $options) : false);
+    }
+
 }
 
 ?>
