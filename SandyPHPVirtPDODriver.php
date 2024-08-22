@@ -2,7 +2,7 @@
 
 // This file contains the pdo driver proxies (SandyPHPVirtPDODriver)
 
-define('SANDBOX_PDO_DRIVERS', "PDO");
+// !!! WARNING !!!: Query verification should only be used for the mysql dialect. Other SQL dialects will be interpreted correctly in most cases, but are still NOT considered anywhere near secure!
 
 final class SandyPHPVirtPDODriver extends PDO {
 
@@ -20,36 +20,19 @@ final class SandyPHPVirtPDODriver extends PDO {
         parent::__construct($dsn, $username, $password, $options);
     }
 
-    protected function checkQuery($sql) {
-        $parser = new PhpMyAdmin\SqlParser\Parser($sql);
-        
-        // Loop over the statements and check them
-        foreach($parser->statements AS $statement) {
-            switch(get_class($statement)) {
-                case "PhpMyAdmin\SqlParser\Statements\SelectStatement":
-                    foreach($statement->from AS $exp) {
-                        if(($exp->database !== null AND !in_array($exp->database, SANDBOX_CONFIG['database'][$this->connectionType]['database_names'])) OR ($exp->table !== null AND !in_array($exp->table, SANDBOX_CONFIG['database'][$this->connectionType]['tables']))) return false;
-                    }
-                    break;
-            }
-        }
-
-        return true;
-    }
-
     #[\Override]
     public function query(string $sql, ?int $fetchMode = null, mixed ...$fetchModeArgs) {
-        return ($this->checkQuery($sql) ? parent::query($sql, $fetchMode, $fetchModeArgs) : false);
+        return (checkQuery($sql, $this->connectionType) ? parent::query($sql, $fetchMode, $fetchModeArgs) : false);
     }
 
     #[\Override]
     public function exec(string $statement) {
-        return ($this->checkQuery($statement) ? parent::exec($statement) : false);
+        return (checkQuery($statement, $this->connectionType) ? parent::exec($statement) : false);
     }
 
     #[\Override]
     public function prepare(string $query, array $options = []) {
-        return ($this->checkQuery($query) ? parent::prepare($query, $options) : false);
+        return (checkQuery($query, $this->connectionType) ? parent::prepare($query, $options) : false);
     }
 
 }

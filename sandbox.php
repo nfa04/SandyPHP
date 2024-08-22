@@ -1,7 +1,10 @@
 <?php
 
 require 'vendor/autoload.php';
-require 'SandyPHPVirtPDODriver.php';
+require 'querycheck.php';
+require 'SandyPHPVirtPDODriver.php'; // PDO is enabled by default, that's why I will assume it is installed. Otherwise it will throw an error anyway...
+if (function_exists('mysqli_init') && extension_loaded('mysqli')) require 'SandyPHPVirtMySQLIDriver.php';
+else require 'MYSQLIwarning.php';
 
 ini_set('display_errors', true);
 error_reporting(E_ALL);
@@ -21,11 +24,11 @@ function studezy_version_info() {
 }
 
 function isNetworkLocation(string $filename) : bool {
-    return preg_match("~^(https?|ftp)://~", $filename);
+    return preg_match("~^(https?|ftp|ssh2)://~", $filename);
 }
 
 function isAllowedWrapper(string $filename) {
-    return !preg_match("~^(php|zlib|glob|phar|ssh2|rar|ogg|expect|unix|udg)://~", $filename);
+    return !preg_match("~^(php|zlib|glob|phar|rar|ogg|expect|unix|udg)://~", $filename);
 }
 
 
@@ -422,7 +425,6 @@ $sandbox->defineFunc('scandir', function(string $directory, int $sorting_order =
     return (storage_access_granted($directory) ? scandir(storage_get_realpath($directory), $sorting_order, $context) : false);
 });
 
-
 // Restrict ability to send emails
 $sandbox->defineFunc('mail', function(string $to, string $subject, string $message, array|string $additional_headers = [], string $additional_params = "") {
     return (SANDBOX_CONFIG['permissions']['mail'] ? mail($to, $subject, $message, $additional_headers, $additional_params) : false);
@@ -656,6 +658,10 @@ $sandbox->defineFunc('getrusage', function(int $mode = 0) {
     return (SANDBOX_CONFIG['permissions']['hostinfo'] ? getrusage($mode) : false);
 });
 
+$sandbox->defineFunc('session_save_path', function(?string $path = null) {
+    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? session_save_path($path) : false);
+});
+
 // Restrict shared memory usage
 $sandbox->defineFunc('shmop_open', function(int $key, string $mode, int $permissions, int $size) {
     return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_open($key, $mode, $permissions, $size) : false);
@@ -688,6 +694,14 @@ $sandbox->defineFunc('http_response_code', function(int $response_code = 0) {
 
 $sandbox->defineFunc('get_headers', function(string $url, bool $associative = false, ?resource $context = null) {
     return (SANDBOX_CONFIG['permissions']['headers'] ? get_headers($url, $associative = false, $context) : false);
+});
+
+$sandbox->defineFunc('apache_request_headers', function() {
+    return (SANDBOX_CONFIG['permissions']['headers'] ? apache_request_headers() : false);
+});
+
+$sandbox->defineFunc('getallheaders', function() {
+    return (SANDBOX_CONFIG['permissions']['headers'] ? getallheaders() : false);
 });
 
 // Restrict setting cookies
@@ -799,6 +813,10 @@ $sandbox->defineFunc('socket_addrinfo_connect', function(AddressInfo $address) {
     return (SANDBOX_CONFIG['permissions']['network'] ? socket_addrinfo_connect($address) : false);
 });
 
+$sandbox->defineFunc('xmlwriter_open_uri', function(string $uri) {
+    return (SANDBOX_CONFIG['permissions']['network'] ? xmlwriter_open_uri($uri) : false);
+});
+
 // Redefine sleep functions, as sleeping might be disabled
 $sandbox->defineFunc('sleep', function(int $seconds) {
     return (SANDBOX_CONFIG['permissions']['sleep'] ? sleep($seconds) : false);
@@ -892,9 +910,10 @@ $sandbox->defineFunc('zend_version', function() {
 });
 
 $sandbox->blacklistClass(['PDO' => 'PDO']);
-$sandbox->defineClass('PDO', 'SandyPHPVirtPDODriver');
+$sandbox->blacklistClass(['mysqli' => 'mysqli']);
+$sandbox->defineClass('mysqli', 'SandyPHPVirtMySQLIDriver');
 
-$sandbox->execute(static_include_files('<?php $pdo = new PDO("mysql:host=localhost;dbname=testdb;charset=utf8mb4"); var_dump($pdo->query("SELECT * FROM a")); ?>'));
+$sandbox->execute(static_include_files('<?php new mysqli(); ?>'));
 
 ob_end_flush();
 
