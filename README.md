@@ -1,5 +1,5 @@
 # SandyPHP
-SandyPHP uses PHPSandbox to run any given script within a sandbox. However, in contrast to PHPSandbox, it does have another approach to controlling what a script can and can not do. While PHPSandbox does whitelisting, re-defining etc. of certain functions, classes, traits, etc., SandyPHP is an abstraction of that, allowing to set/unset/restrict permissions for specific use-cases that might be dangerous to the machine the script is running on. For example:
+SandyPHP uses [PHPSandbox](https://github.com/Corveda/PHPSandbox) to run any given script within a sandbox. However, in contrast to PHPSandbox, it does have another approach to controlling what a script can and can not do. While PHPSandbox does whitelisting, re-defining etc. of certain functions, classes, traits, etc., SandyPHP is an abstraction of that, allowing to set/unset/restrict permissions for specific use-cases that might be dangerous to the machine the script is running on. For example:
 
   - Access to storage
   - Access to the network
