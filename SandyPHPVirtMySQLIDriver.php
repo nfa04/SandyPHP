@@ -62,7 +62,7 @@ final class SandyPHPVirtMYSQLIDriver extends mysqli {
 
     #[\Override]
     public function select_db(string $database) {
-        if(in_array($database, SANDBOX_CONFIG['database']['mysql']['database_names'])) return parent::select_db;
+        if(in_array($database, SANDBOX_CONFIG['database']['mysql']['database_names'])) return parent::select_db($database);
         return false;
     }
 }
