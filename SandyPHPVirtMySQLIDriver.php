@@ -1,20 +1,28 @@
-<?
+/* 
 
-final class SandyPHPVirtMYSQLIDriver extends mysqli {
+Please note: 
+This class is not used as is here. Instead the keywords SANDBOXID and SANDBOXCONFIG are replaced with the their respective value in order to pass the information about configuration to this class. Therefore sandboxes will spawn objects of the class according to this scheme: "SandyPHPVirtMYSQLIDriver_SANDBOX_SANDBOXID", where SANDBOXID is replaced with the respective id of the running sandbox.
+
+*/
+
+final class SandyPHPVirtMYSQLIDriver_SANDBOX_SANDBOXID extends mysqli {
+
+    private $config;
 
     public function __construct(?string $hostname = null, ?string $username = null, #[\SensitiveParameter] ?string $password = null, ?string $database = null, ?int $port = null, ?string $socket = null) {
+        $this->config = json_decode('SANDBOXCONFIG', true);
         if($this->connectionAllowed($hostname, $database)) return parent::__construct($hostname, $username, $password, $database, $port, $socket);
         return false;
     }
 
     protected function connectionAllowed($hostname, $database) {
-        if(!in_array($hostname, SANDBOX_CONFIG['database']['mysql']['hosts']) || !in_array($database, SANDBOX_CONFIG['database']['mysql']['database_names'])) return false;
+        if(!in_array($hostname, $this->config['mysql']['hosts']) || !in_array($database, $this->config['mysql']['database_names'])) return false;
         return true;
     }
 
     #[\Override]
     public function change_user(string $username, #[\SensitiveParameter] string $password, ?string $database) {
-        if(in_array($database, SANDBOX_CONFIG['database']['mysql']['database_names'])) return parent::change_user($username, $password, $database);
+        if(in_array($database, $this->config['mysql']['database_names'])) return parent::change_user($username, $password, $database);
         return false;
     }
 
@@ -26,25 +34,25 @@ final class SandyPHPVirtMYSQLIDriver extends mysqli {
 
     #[\Override]
     public function execute_query(string $query, ?array $params = null) {
-        if(checkQuery($query, 'mysql')) parent::execute_query($query, $params);
+        if(checkQuery($query, 'mysql', $this->config)) parent::execute_query($query, $params);
         return false;
     }
 
     #[\Override]
     public function multi_query(string $query) {
-        if(checkQuery($query, 'mysql')) parent::multi_query($query);
+        if(checkQuery($query, 'mysql', $this->config)) parent::multi_query($query);
         return false;
     }
 
     #[\Override]
     public function prepare(string $query) {
-        if(checkQuery($query, 'mysql')) parent::prepare($query);
+        if(checkQuery($query, 'mysql', $this->config)) parent::prepare($query);
         return false;
     }
     
     #[\Override]
     public function query(string $query, int $result_mode = MYSQLI_STORE_RESULT) {
-        if(checkQuery($query, 'mysql')) parent::query($query, $result_mode);
+        if(checkQuery($query, 'mysql', $this->config)) parent::query($query, $result_mode);
         return false;
     }
 
@@ -56,16 +64,14 @@ final class SandyPHPVirtMYSQLIDriver extends mysqli {
 
     #[\Override]
     public function real_query(string $query)  {
-        if(checkQuery($query)) parent::real_query($query);
+        if(checkQuery($query, 'mysql', $this->config)) parent::real_query($query);
         return false;
     }
 
     #[\Override]
     public function select_db(string $database) {
-        if(in_array($database, SANDBOX_CONFIG['database']['mysql']['database_names'])) return parent::select_db($database);
+        if(in_array($database, $this->config['mysql']['database_names'])) return parent::select_db($database);
         return false;
     }
 }
 
-
-?>

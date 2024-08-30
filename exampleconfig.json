@@ -5,13 +5,18 @@
         "functions": true,
         "storage": ["*"],
         "network": false,
-        "include": true
+        "include": true,
+        "sleep": false
     },
     "database": {
         "mysql": {
             "hosts": ["localhost"],
             "database_names": ["testdb"],
-            "tables": ["*"]
+            "tables": ["a"]
         }
+    },
+    "log": "../log.txt",
+    "debug": {
+        "exceptions": true
     }
  }

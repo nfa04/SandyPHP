@@ -1,0 +1,5 @@
+<?php
+
+    new PDO('mysql:dbname=testdb;host=127.0.0.1');
+    new PDO('mysql:dbname=testdb;host=127.0.0.1');
+?>

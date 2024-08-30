@@ -1,10 +1,23 @@
 <?php
 
+define('SANDBOX_CONFIG', json_decode(file_get_contents('exampleconfig.json'), true));
+define('SANDBOX_WHITELIST', json_decode(file_get_contents('whitelist.json'), true));
+define('SANDBOX_SUPPORTED_PDO_DRIVERS', array('mysql'));
+
+require 'exceptions.php';
+require 'logger.php';
+
+function handleException(SandyPHPException $exception, bool $output_log, bool $debug_output) {
+    global $logger;
+    if(isset($this->config['log'])) $logger->logException($exception);
+    if($debug_output) echo $exception->getMessage();
+}
+
 require 'vendor/autoload.php';
 require 'querycheck.php';
-require 'SandyPHPVirtPDODriver.php'; // PDO is enabled by default, that's why I will assume it is installed. Otherwise it will throw an error anyway...
+/*require 'SandyPHPVirtPDODriver.php'; // PDO is enabled by default, that's why I will assume it is installed. Otherwise it will throw an error anyway...
 if (function_exists('mysqli_init') && extension_loaded('mysqli')) require 'SandyPHPVirtMySQLIDriver.php';
-else require 'MYSQLIwarning.php';
+else require 'MYSQLIwarning.php';*/
 
 ini_set('display_errors', true);
 error_reporting(E_ALL);
@@ -13,14 +26,8 @@ error_reporting(E_ALL);
 
 ob_start(); // Start an output buffer in order for the script to be able to send custom headers (if it's allowed to)
 
-$sandbox = new \PHPSandbox\PHPSandbox();
-
-define('SANDBOX_CONFIG', json_decode(file_get_contents('exampleconfig.json'), true));
-define('SANDBOX_WHITELIST', json_decode(file_get_contents('whitelist.json'), true));
-define('SANDBOX_SUPPORTED_PDO_DRIVERS', array('mysql', 'sqlite'));
-
-function studezy_version_info() {
-   return 'StudEzy 0.0.0beta';
+function SandyPHP_version_info() {
+   return 'SandyPHP 0.0.0beta - Not intended for use on any publicly accessible servers!';
 }
 
 function isNetworkLocation(string $filename) : bool {
@@ -31,7 +38,6 @@ function isAllowedWrapper(string $filename) {
     return !preg_match("~^(php|zlib|glob|phar|rar|ogg|expect|unix|udg)://~", $filename);
 }
 
-
 function file_is_within_folders(string $filename, $allowedPaths) : bool {
     $match = false;
     foreach($allowedPaths as $allowedPath) {
@@ -40,882 +46,972 @@ function file_is_within_folders(string $filename, $allowedPaths) : bool {
     return $match;
 }
 
-function storage_access_granted($filename) {
-    if(basename($filename) == 'manifest.json' OR (isNetworkLocation($filename) AND !SANDBOX_CONFIG['permissions']['network']) OR !isAllowedWrapper($filename)) return false; // Applications are not allowed access to their manifest file, they can request configuration info instead
-    else if(file_is_within_folders(storage_get_realpath($filename), SANDBOX_CONFIG['permissions']['storage']) OR SANDBOX_CONFIG['permissions']['storage'][0] === '*') return true;
-    die('FATAL: request for non-whitelisted file: <i>'.storage_get_realpath($filename).'</i>');
-    return false;
-}
+class SandyPHPSandbox {
 
-function storage_get_realpath($filename) {
-    if(isNetworkLocation($filename)) return $filename;
-    else if(isset(SANDBOX_CONFIG['storage']['fsroot'])) return SANDBOX_CONFIG['storage']['fsroot'].str_replace('..', '', $filename);
-    else return realpath($filename);
-}
+    private PHPSandbox $PHPsandbox;
+    protected $config;
+    protected $logger;
+    private $id;
 
-
-$sandbox->whitelistFunc('studezy_version_info');
-$sandbox->whitelistFunc(SANDBOX_WHITELIST);
-$sandbox->allow_includes = false; //SANDBOX_CONFIG['permissions']['include'] | false;
-$sandbox->allow_escaping = SANDBOX_CONFIG['permissions']['escape'] | false;
-$sandbox->allow_functions = SANDBOX_CONFIG['permissions']['functions'] | false;
-$sandbox->allow_aliases = true;
-$sandbox->validate_types = false;
-$sandbox->auto_whitelist_functions = true;
-
-if(isset(SANDBOX_CONFIG['exposeScripts'])) {
-    foreach(SANDBOX_CONFIG['exposeScripts']['scripts'] AS $script) {
-        require_once $script;
+    public function getPHPSandbox() {
+        return $this->PHPSandbox;
     }
-    if(isset(SANDBOX_CONFIG['exposeScripts']['whitelist']['classes']) AND SANDBOX_CONFIG['exposeScripts']['whitelist']['classes'] !== false) $sandbox->whitelistClass(SANDBOX_CONFIG['exposeScripts']['whitelist']['classes']);
-    if(isset(SANDBOX_CONFIG['exposeScripts']['whitelist']['functions']) AND SANDBOX_CONFIG['exposeScripts']['whitelist']['functions'] !== false) $sandbox->whiteListFunc(SANDBOX_CONFIG['exposeScripts']['whitelist']['functions']);
-}
 
-
-// Redefine all functions associated with file handling to enforce storage access restrictions
-
-// #1 file_get_contents
-$sandbox->defineFunc('file_get_contents', function(string $filename) {
-    if(storage_access_granted($filename)) return file_get_contents(storage_get_realpath($filename));
-    return false;
-});
-
-// #2 file_put_contents
-$sandbox->defineFunc('file_put_contents', function(string $filename, $flags, $ctx = null) {
-    return (storage_access_granted($filename) ? file_put_contents(storage_get_realpath($filename), $flags, $ctx) : false);
-});
-
-
-// #3 fopen
-$sandbox->defineFunc('fopen', function(string $filename, $mode, $use_include_path = false, $context = null) {
-    return (storage_access_granted($filename) ? fopen(storage_get_realpath($filename), $mode, $use_include_path, $context) : false);
-});
-
-
-// #4 openssl_x509_export_to_file
-$sandbox->defineFunc('openssl_x509_export_to_file', function($certificate, $output_filename, $no_text = true) {
-    return (storage_access_granted($output_filename) ? openssl_x509_export_to_file($certificate, storage_get_realpath($output_filename), $no_text) : false);
-});
-
-
-// #5 openssl_pkcs12_export_to_file
-$sandbox->defineFunc('openssl_pkcs12_export_to_file', function($certificate, string $output_filename, OpenSSLAsymmetricKey|OpenSSLCertificate|array|string $private_key, string $passphrase, array $options = []) {
-    return (storage_access_granted($output_filename) ? openssl_pkcs12_export_to_file($certificate, storage_get_realpath($output_filename), $private_key, $passphrase, $options) : false);
-});
-
-// #6 openssl_csr_export_to_file
-$sandbox->defineFunc('openssl_csr_export_to_file', function(OpenSSLCertificateSigningRequest|string $csr, string $output_filename, bool $no_text = true) {
-    return (storage_access_granted($output_filename) ? openssl_csr_export_to_file($csr, storage_get_realpath($output_filename), $no_text) : false);
-});
-
-// #7 openssl_pkey_export_to_file
-$sandbox->defineFunc('openssl_pkey_export_to_file', function(OpenSSLAsymmetricKey|OpenSSLCertificate|array|string $key, string $output_filename, ?string $passphrase = null, ?array $options = null) {
-    return (storage_access_granted($output_filename) ? openssl_pkey_export_to_file($key, storage_get_realpath($output_filename), $passphrase, $options) : false);
-});
-
-// #8 gzfile
-$sandbox->defineFunc('gzfile', function(string $filename, int $use_include_path = 0) {
-    return (storage_access_granted($filename) ? gzfile(storage_get_realpath($filename), $use_include_path) : false);
-});
-
-// #9 gzopen
-$sandbox->defineFunc('gzopen', function(string $filename, string $mode, int $use_include_path = 0) {
-    return (storage_access_granted($filename) ? gzopen(storage_get_realpath($filename), $mode, $use_include_path) : false);
-});
-
-// #10 readgzfile
-$sandbox->defineFunc('readgzfile', function(string $filename, int $use_include_path = 0) {
-    return (storage_access_granted($filename) ? readgzfile($key, storage_get_realpath($output_filename), $passphrase, $options) : false);
-});
-
-// #11 hash_file
-$sandbox->defineFunc('hash_file', function(string $algo, string $filename, bool $binary = false, array $options = []) {
-    return (storage_access_granted($filename) ? hash_file($algo, storage_get_realpath($filename), $binary, $options) : false);
-});
-
-// #12 hash_hmac_file
-$sandbox->defineFunc('hash_hmac_file', function(string $algo, string $filename, string $key, bool $binary = false) {
-    return (storage_access_granted($filename) ? hash_hmac_file($algo, storage_get_realpath($filename, $key, $binary)) : false);
-});
-
-// #13 hash_update_file
-$sandbox->defineFunc('hash_update_file', function(HashContext $context, string $filename, $stream_context = null) {
-    return (storage_access_granted($filename) ? hash_update_file($context, storage_get_realpath($filename), $stream_context) : false);
-});
-
-// #14 highlight_file
-$sandbox->defineFunc('highlight_file', function(string $filename, bool $return = false) {
-    return (storage_access_granted($filename) ? highlight_file(storage_get_realpath($filename), $return) : false);
-});
-
-// #15 is_uploaded_file
-$sandbox->defineFunc('is_uploaded_file', function(string $filename) {
-    return (storage_access_granted($filename) AND SANDBOX_CONFIG['permissions']['fileupload'] ? is_uploaded_file(storage_get_realpath($filename)) : false);
-});
-
-// #16 move_uploaded_file
-$sandbox->defineFunc('move_uploaded_file', function(string $from, string $to) {
-    return (storage_access_granted($to) AND SANDBOX_CONFIG['permissions']['fileupload'] ? move_uploaded_file($from, storage_get_realpath($to)) : false);
-});
-
-// #17 parse_ini_file
-$sandbox->defineFunc('parse_ini_file', function(string $filename, bool $process_sections = false, int $scanner_mode = INI_SCANNER_NORMAL) {
-    return (storage_access_granted($filename) ? parse_ini_file(storage_get_realpath($filename), $process_sections, $scanner_mode) : false);
-});
-
-// #18 md5_file
-$sandbox->defineFunc('md5_file', function(string $filename, bool $binary = false) {
-    return (storage_access_granted($filename) ? md5_file(storage_get_realpath($filename), $binary) : false);
-});
-
-// #19 sha1_file
-$sandbox->defineFunc('sha1_file', function(string $filename, bool $binary = false) {
-    return (storage_access_granted($filename) ? sha1_file(storage_get_realpath($filename), $binary) : false);
-});
-
-// #20 readfile
-$sandbox->defineFunc('readfile', function(string $filename, bool $use_include_path = false, $context = null) {
-    return (storage_access_granted($filename) ? readfile(storage_get_realpath($filename), $use_include_path, $context) : false);
-});
-
-// #21 file
-$sandbox->defineFunc('file', function(string $filename, int $flags = 0, $context = null) {
-    return (storage_access_granted($filename) ? file(storage_get_realpath($filename), $flags, $context) : false);
-});
-
-// #22 fileatime
-$sandbox->defineFunc('fileatime', function(string $filename) {
-    return (storage_access_granted($filename) ? fileatime(storage_get_realpath($filename)) : false);
-});
-
-// #23 filectime
-$sandbox->defineFunc('filectime', function(string $filename) {
-    return (storage_access_granted($filename) ? filectime(storage_get_realpath($filename)) : false);
-});
-
-// #24 filegroup
-$sandbox->defineFunc('filegroup', function(string $filename) {
-    return (storage_access_granted($filename) ? filegroup(storage_get_realpath($filename)) : false);
-});
-
-// #25 fileinode
-$sandbox->defineFunc('fileinode', function(string $filename) {
-    return (storage_access_granted($filename) ? fileinode(storage_get_realpath($filename)) : false);
-});
-
-// #26 filemtime
-$sandbox->defineFunc('filemtime', function(string $filename) {
-    return (storage_access_granted($filename) ? filemtime(storage_get_realpath($filename)) : false);
-});
-
-// #27 fileowner
-$sandbox->defineFunc('fileowner', function(string $filename) {
-    return (storage_access_granted($filename) ? fileowner(storage_get_realpath($filename)) : false);
-});
-
-// #28 fileperms
-$sandbox->defineFunc('fileperms', function(string $filename) {
-    return (storage_access_granted($filename) ? fileperms(storage_get_realpath($filename)) : false);
-});
-
-// #29 filesize
-$sandbox->defineFunc('filesize', function(string $filename) {
-    return (storage_access_granted($filename) ? filesize(storage_get_realpath($filename)) : false);
-});
-
-// #30 filetype
-$sandbox->defineFunc('filetype', function(string $filename) {
-    return (storage_access_granted($filename) ? filetype(storage_get_realpath($filename)) : false);
-});
-
-// #31 file_exists
-$sandbox->defineFunc('file_exists', function(string $filename) {
-    return (storage_access_granted($filename) ? file_exists(storage_get_realpath($filename)) : false);
-});
-
-// #32 is_file
-$sandbox->defineFunc('is_file', function(string $filename) {
-    return (storage_access_granted($filename) ? is_file(storage_get_realpath($filename)) : false);
-});
-
-// #33 finfo_file
-$sandbox->defineFunc('finfo_file', function(finfo $finfo, string $filename, int $flags = FILEINFO_NONE, $context = null) {
-    return (storage_access_granted($filename) ? finfo_file($finfo, storage_get_realpath($filename), $flags, $context) : false);
-});
-
-// #34 simplexml_load_file
-$sandbox->defineFunc('simplexml_load_file', function(string $filename, ?string $class_name = SimpleXMLElement::class, int $options = 0, string $namespace_or_prefix = "", bool $is_prefix = false) {
-    return (storage_access_granted($filename) ? simplexml_load_file(storage_get_realpath($filename), $class_name, $options, $namespace_or_prefix, $is_prefix) : false);
-});
-
-// #35 unlink
-$sandbox->defineFunc('unlink', function(string $filename, $context = null) {
-    return (storage_access_granted($filename) ? unlink(storage_get_realpath($filename), $context) : false);
-});
-
-$sandbox->defineFunc('opendir', function(string $directory, $context = null) {
-    return (storage_access_granted($directory) ? opendir(storage_get_realpath($directory), $context) : false);
-});
-
-$sandbox->defineFunc('dir', function(string $directory, $context = null) {
-    return (storage_access_granted($directory) ? dir(storage_get_realpath($directory), $context) : false);
-});
-
-$sandbox->defineFunc('get_meta_tags', function(string $filename, bool $use_include_path = false) {
-    return (storage_access_granted($filename) ? get_meta_tags(storage_get_realpath($filename), $use_include_path) : false);
-});
-
-$sandbox->defineFunc('rmdir', function(string $directory, $context = null) {
-    return (storage_access_granted($directory) ? rmdir(storage_get_realpath($directory), $context) : false);
-});
-
-$sandbox->defineFunc('mkdir', function(string $directory, int $permissions = 0777, bool $recursive = false, $context = null) {
-    return (storage_access_granted($directory) ? mkdir(storage_get_realpath($directory), $permissions) : false);
-});
-
-$sandbox->defineFunc('rename', function(string $from, string $to, $context = null) {
-    return (storage_access_granted($from) AND storage_access_granted($to) ? rename(storage_get_realpath($from), storage_get_realpath($to), $context) : false);
-});
-
-$sandbox->defineFunc('copy', function(string $from, string $to, $context = null) {
-    return (storage_access_granted($from) AND storage_access_granted($to) ? copy(storage_get_realpath($from), storage_get_realpath($to), $context) : false);
-});
-
-$sandbox->defineFunc('tempnam', function(string $directory, string $prefix) {
-    return (storage_access_granted($directory) ? tempnam(storage_get_realpath($directory), $prefix) : false);
-});
-
-$sandbox->defineFunc('is_writable', function(string $filename) {
-    return (storage_access_granted($filename) ? is_writable(storage_get_realpath($filename)) : false);
-});
-
-$sandbox->defineFunc('is_writeable', function(string $filename) {
-    return (storage_access_granted($filename) ? is_writeable(storage_get_realpath($filename)) : false);
-});
-
-$sandbox->defineFunc('is_readable', function(string $filename) {
-    return (storage_access_granted($filename) ? is_readable(storage_get_realpath($filename)) : false);
-});
-
-$sandbox->defineFunc('is_executable', function(string $filename) {
-    return (storage_access_granted($filename) ? is_executable(storage_get_realpath($filename)) : false);
-});
-
-$sandbox->defineFunc('is_dir', function(string $filename) {
-    return (storage_access_granted($filename) ? is_dir(storage_get_realpath($filename)) : false);
-});
-
-$sandbox->defineFunc('is_link', function(string $filename) {
-    return (storage_access_granted($filename) ? is_link(storage_get_realpath($filename)) : false);
-});
-
-$sandbox->defineFunc('stat', function(string $filename) {
-    return (storage_access_granted($filename) ? stat(storage_get_realpath($filename)) : false);
-});
-
-$sandbox->defineFunc('lstat', function(string $filename) {
-    return (storage_access_granted($filename) ? lstat(storage_get_realpath($filename)) : false);
-});
-
-$sandbox->defineFunc('chown', function(string $filename, string|int $user) {
-    return (storage_access_granted($filename) ? chown(storage_get_realpath($filename), $user) : false);
-});
-
-$sandbox->defineFunc('chgrp', function(string $filename, string|int $group) {
-    return (storage_access_granted($filename) ? chgrp(storage_get_realpath($filename), $group) : false);
-});
-
-$sandbox->defineFunc('lchown', function(string $filename, string|int $user) {
-    return (storage_access_granted($filename) ? lchown(storage_get_realpath($filename), $user) : false);
-});
-
-$sandbox->defineFunc('lchgrp', function(string $filename, string|int $group) {
-    return (storage_access_granted($filename) ? lchgrp(storage_get_realpath($filename), $group) : false);
-});
-
-$sandbox->defineFunc('chmod', function(string $filename, int $permissions) {
-    return (storage_access_granted($filename) ? chmod(storage_get_realpath($filename), $permissions) : false);
-});
-
-$sandbox->defineFunc('touch', function(string $filename, ?int $mtime = null, ?int $atime = null) {
-    return (storage_access_granted($filename) ? touch(storage_get_realpath($filename), $mtime, $atime) : false);
-});
-
-$sandbox->defineFunc('disk_total_space', function(string $directory) {
-    return (storage_access_granted($directory) AND SANDBOX_CONFIG['permissions']['hostinfo'] ? disk_total_space(storage_get_realpath($directory)) : false);
-});
-
-$sandbox->defineFunc('disk_free_space', function(string $directory) {
-    return (storage_access_granted($directory) AND SANDBOX_CONFIG['permissions']['hostinfo'] ? disk_free_space(storage_get_realpath($directory)) : false);
-});
-
-$sandbox->defineFunc('diskfreespace', function(string $directory) {
-    return (storage_access_granted($directory) AND SANDBOX_CONFIG['permissions']['hostinfo'] ? diskfreespace(storage_get_realpath($directory)) : false);
-});
-
-$sandbox->defineFunc('fsockopen', function(string $hostname, int $port = -1, int &$error_code = null, string &$error_message = null, ?float $timeout = null) {
-    return (storage_access_granted($hostname) ? fsockopen(storage_get_realpath($hostname), $port, $error_code, $error_message, $timeout) : false);
-});
-
-$sandbox->defineFunc('pfsockopen', function(string $hostname, int $port = -1, int &$error_code = null, string &$error_message = null, ?float $timeout = null) {
-    return (storage_access_granted($hostname) ? pfsockopen(storage_get_realpath($hostname), $port, $error_code, $error_message, $timeout) : false);
-});
-
-$sandbox->defineFunc('getimagesize', function(string $filename, array &$image_info = null) {
-    return (storage_access_granted($hostname) ? getimagesize(storage_get_realpath($filename), $image_info) : false);
-});
-
-$sandbox->defineFunc('iptcembed', function(string $iptc_data, string $filename, int $spool = 0) {
-    return (storage_access_granted($filename) ? iptcembed($iptc_data, storage_get_realpath($filename), $spool) : false);
-});
-
-$sandbox->defineFunc('readlink', function(string $path) {
-    return (storage_access_granted($path) ? readlink(storage_get_realpath($path)) : false);
-});
-
-$sandbox->defineFunc('linkinfo', function(string $path) {
-    return (storage_access_granted($path) ? linkinfo(storage_get_realpath($path)) : false);
-});
-
-$sandbox->defineFunc('symlink', function(string $target, string $link) {
-    return (storage_access_granted($target) AND storage_access_granted($link) ? symlink(storage_get_realpath($target), storage_get_realpath($link)) : false);
-});
-
-$sandbox->defineFunc('link', function(string $target, string $link) {
-    return (storage_access_granted($target) AND storage_access_granted($link) ? link(storage_get_realpath($target), storage_get_realpath($link)) : false);
-});
-
-$sandbox->defineFunc('bzopen', function(string|resource $file, string $mode) {
-    return ((storage_access_granted($file) OR get_resource_type($file) == 'stream') ? bzopen((get_resource_type($file) == 'stream' ? $file : storage_get_realpath($file)), $mode): false);
-});
-
-$sandbox->defineFunc('ftp_get', function(FTP\Connection $ftp, string $local_filename, string $remote_filename, int $mode = FTP_BINARY, int $offset = 0) {
-    return (storage_access_granted($local_filename) AND SANDBOX_CONFIG['permissions']['network'] ? ftp_get($ftp, storage_get_realpath($local_filename), $remote_filename, $mode, $offset) : false);
-});
-
-$sandbox->defineFunc('ftp_put', function(FTP\Connection $ftp, string $remote_filename, string $local_filename, int $mode = FTP_BINARY, int $offset = 0) {
-    return (storage_access_granted($local_filename) AND SANDBOX_CONFIG['permissions']['network'] ? ftp_put($ftp, $remote_filename, storage_get_realpath($local_filename), $mode, $offset) : false);
-});
-
-$sandbox->defineFunc('ftp_append', function(FTP\Connection $ftp, string $remote_filename, string $local_filename, int $mode = FTP_BINARY) {
-    return (storage_access_granted($local_filename) AND SANDBOX_CONFIG['permissions']['network'] ? ftp_append($ftp, $remote_filename, storage_get_realpath($local_filename), $mode) : false);
-});
-
-$sandbox->defineFunc('ftp_nb_put', function(FTP\Connection $ftp, string $remote_filename, string $local_filename, int $mode = FTP_BINARY, int $offset = 0) {
-    return (storage_access_granted($local_filename) AND SANDBOX_CONFIG['permissions']['network'] ? ftp_nb_put($ftp, $remote_filename, storage_get_realpath($local_filename), $mode, $offset) : false);
-});
-
-$sandbox->defineFunc('posix_mkfifo', function(string $filename, int $permissions) {
-    return (storage_access_granted($filename) ? posix_mkfifo(storage_get_realpath($filename), $permissions) : false);
-});
-
-$sandbox->defineFunc('posix_mknod', function(string $filename, int $flags, int $major = 0, int $minor = 0) {
-    return (storage_access_granted($filename) ? posix_mknod(storage_get_realpath($filename), $flags, $major, $minor) : false);
-});
-
-$sandbox->defineFunc('posix_access', function(string $filename, int $flags = 0) {
-    return (storage_access_granted($filename) ? posix_access(storage_get_realpath($filename), $flags) : false);
-});
-
-$sandbox->defineFunc('chdir', function(string $directory) {
-    return (storage_access_granted($directory) ? chdir(storage_get_realpath($directory)) : false);
-});
-
-$sandbox->defineFunc('scandir', function(string $directory, int $sorting_order = SCANDIR_SORT_ASCENDING, ?resource $context = null) {
-    return (storage_access_granted($directory) ? scandir(storage_get_realpath($directory), $sorting_order, $context) : false);
-});
-
-// Restrict ability to send emails
-$sandbox->defineFunc('mail', function(string $to, string $subject, string $message, array|string $additional_headers = [], string $additional_params = "") {
-    return (SANDBOX_CONFIG['permissions']['mail'] ? mail($to, $subject, $message, $additional_headers, $additional_params) : false);
-});
-
-$sandbox->defineFunc('mb_send_mail', function(string $to, string $subject, string $message, array|string $additional_headers = [], string $additional_params = "") {
-    return (SANDBOX_CONFIG['permissions']['mail'] ? mb_send_mail($to, $subject, $message, $additional_headers, $additional_params) : false);
-});
-
-// Some functions need to be disabled but should not throw errors inside the sandbox in order for scripts using them not to fail, so they are redefined returning a value which won't cause most scripts to fail...
-// #36 ini_set
-$sandbox->defineFunc('ini_set', function(string $option, string|int|float|bool|null $value) {
-    return false;
-});
-
-// #37 ini_alter
-$sandbox->defineFunc('ini_alter', function(string $option, string|int|float|bool|null $value) {
-    return false;
-});
-
-// #38 ini_restore
-$sandbox->defineFunc('ini_restore', function(string $option) {
-    return false;
-});
-
-// #39 set_include_path
-$sandbox->defineFunc('set_include_path', function(string $include_path) {
-    return false;
-});
-
-// #40 ignore_user_abort
-$sandbox->defineFunc('ignore_user_abort', function(?bool $enable = null) {
-    return false;
-});
-
-$sandbox->defineFunc('pdo_drivers', function() {
-    return array_map(function($driver) {
-        if(in_array($driver, SANDBOX_SUPPORTED_PDO_DRIVERS)) return 'SandyPHPVirtPDODriver for '.$driver;
-        return 'No SandyPHPVirtPDODriver for '.$driver;
-    }, pdo_drivers());
-});
-
-
-// Restrict access to host information
-// gethostname
-$sandbox->defineFunc('gethostname', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? gethostname() : 'PHPSandboxVirtEnv');
-});
-
-$sandbox->defineFunc('net_get_interfaces', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? net_get_interfaces() : false);
-});
-
-$sandbox->defineFunc('getmyuid', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? getmyuid() : false);
-});
-
-$sandbox->defineFunc('getmygid', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? getmygid() : false);
-});
-
-$sandbox->defineFunc('getmypid', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? getmypid() : false);
-});
-
-$sandbox->defineFunc('getmyinode', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? getmyinode() : false);
-});
-
-$sandbox->defineFunc('getlastmod', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? getlastmod() : false);
-});
-
-$sandbox->defineFunc('openlog', function(string $prefix, int $flags, int $facility) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? openlog($prefix, $flags, $facility) : false);
-});
-
-$sandbox->defineFunc('sys_getloadavg', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? sys_getloadavg() : false);
-});
-
-$sandbox->defineFunc('get_current_user', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? get_current_user() : false);
-});
-
-$sandbox->defineFunc('sys_get_temp_dir', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? sys_get_temp_dir() : 'PHPSandboxVirtStorage');
-});
-
-$sandbox->defineFunc('phpinfo', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? phpinfo() : 'SandyPHP');
-});
-
-$sandbox->defineFunc('phpversion', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? phpversion() : 'SandyPHP 0.0.0beta');
-});
-
-$sandbox->defineFunc('phpcredits', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? phpcredits() : 'Credits can be found on the PHP website, this feature is disabled for security reasons, big thanks to the PHP guys anyway!');
-});
-
-$sandbox->defineFunc('php_sapi_name', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? php_sapi_name() : false);
-});
-
-$sandbox->defineFunc('php_uname', function(string $mode = "a") {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? php_uname($mode) : 'SandyPHP');
-});
-
-$sandbox->defineFunc('posix_getpid', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getpid() : 1801332415715); // Number is for the letters in SandyPHP
-});
-
-$sandbox->defineFunc('posix_getppid', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getppid() : 1801332415715); // Number is for the letters in SandyPHP
-});
-
-$sandbox->defineFunc('posix_getuid', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getuid() : 'SandyPHPVirtUser');
-});
-
-$sandbox->defineFunc('posix_setuid', function(int $user_id) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setuid($user_id) : false);
-});
-
-$sandbox->defineFunc('posix_geteuid', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_geteuid() : 'SandyPHPVirtUser');
-});
-
-$sandbox->defineFunc('posix_seteuid', function(int $user_id) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_seteuid($user_id) : false);
-});
-
-$sandbox->defineFunc('posix_getgid', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getgid() : false);
-});
-
-$sandbox->defineFunc('posix_setgid', function(int $group_id) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setgid($group_id) : false);
-});
-
-$sandbox->defineFunc('posix_getegid', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getegid() : false);
-});
-
-$sandbox->defineFunc('posix_setegid', function(int $group_id) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setegid($group_id) : false);
-});
-
-$sandbox->defineFunc('posix_getgroups', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getgroups() : false);
-});
-
-$sandbox->defineFunc('posix_getlogin', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getlogin() : false);
-});
-
-$sandbox->defineFunc('posix_getpgrp', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getpgrp() : false);
-});
-
-$sandbox->defineFunc('posix_setsid', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setsid() : false);
-});
-
-$sandbox->defineFunc('posix_setpgid', function(int $process_id, int $process_group_id) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setpgid($process_id, $process_group_id) : false);
-});
-
-$sandbox->defineFunc('posix_getpgid', function(int $process_id) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getpgid($process_id) : false);
-});
-
-$sandbox->defineFunc('posix_getsid', function(int $process_id) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getsid($process_id) : false);
-});
-
-$sandbox->defineFunc('posix_uname', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_uname() : false);
-});
-
-$sandbox->defineFunc('posix_times', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_times() : false);
-});
-
-$sandbox->defineFunc('posix_ctermid', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_ctermid() : false);
-});
-
-$sandbox->defineFunc('posix_ttyname', function(resource|int $file_descriptor) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_ttyname($file_descriptor) : false);
-});
-
-$sandbox->defineFunc('posix_isatty', function(resource|int $file_descriptor) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_isatty($file_descriptor) : false);
-});
-
-$sandbox->defineFunc('posix_initgroups', function(string $username, int $group_id) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_initgroups($username, $group_id) : false);
-});
-
-$sandbox->defineFunc('posix_getcwd', function() {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getcwd() : false);
-});
-
-$sandbox->defineFunc('posix_getgrnam', function(string $name) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getgrnam($name) : false);
-});
-
-$sandbox->defineFunc('posix_getgrgid', function(string $group_id) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getgrgid($group_id) : false);
-});
-
-$sandbox->defineFunc('posix_getpwnam', function(string $username) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getpwnam($username) : false);
-});
-
-$sandbox->defineFunc('posix_getpwuid', function(string $user_id) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getpwuid($user_id) : false);
-});
-
-$sandbox->defineFunc('posix_getrlimit', function(?int $resource = null) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_getrlimit($resource) : false);
-});
-
-$sandbox->defineFunc('posix_setrlimit', function(int $resource, int $soft_limit, int $hard_limit) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? posix_setrlimit($resource, $soft_limit, $hard_limit) : false);
-});
-
-$sandbox->defineFunc('getrusage', function(int $mode = 0) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? getrusage($mode) : false);
-});
-
-$sandbox->defineFunc('session_save_path', function(?string $path = null) {
-    return (SANDBOX_CONFIG['permissions']['hostinfo'] ? session_save_path($path) : false);
-});
-
-// Restrict shared memory usage
-$sandbox->defineFunc('shmop_open', function(int $key, string $mode, int $permissions, int $size) {
-    return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_open($key, $mode, $permissions, $size) : false);
-});
-
-$sandbox->defineFunc('shmop_read', function(Shmop $shmop, int $offset, int $size) {
-    return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_read($shmop, $offset, $size) : false);
-});
-
-$sandbox->defineFunc('shmop_size', function(Shmop $shmop) {
-    return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_read($shmop) : false);
-});
-
-$sandbox->defineFunc('shmop_write', function(Shmop $shmop, string $data, int $offset) {
-    return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_read($shmop, $data, $offset) : false);
-});
-
-$sandbox->defineFunc('shmop_delete', function(Shmop $shmop) {
-    return (SANDBOX_CONFIG['permissions']['sharedmemory'] ? shmop_read($shmop) : false);
-});
-
-// Restrict rewriting headers
-$sandbox->defineFunc('header', function(string $header, bool $replace = true, int $response_code = 0) {
-    return (SANDBOX_CONFIG['permissions']['headers'] ? header($header, $replace, $response_code) : false);
-});
-
-$sandbox->defineFunc('http_response_code', function(int $response_code = 0) {
-    return (SANDBOX_CONFIG['permissions']['headers'] ? http_response_code($response_code) : false);
-});
-
-$sandbox->defineFunc('get_headers', function(string $url, bool $associative = false, ?resource $context = null) {
-    return (SANDBOX_CONFIG['permissions']['headers'] ? get_headers($url, $associative = false, $context) : false);
-});
-
-$sandbox->defineFunc('apache_request_headers', function() {
-    return (SANDBOX_CONFIG['permissions']['headers'] ? apache_request_headers() : false);
-});
-
-$sandbox->defineFunc('getallheaders', function() {
-    return (SANDBOX_CONFIG['permissions']['headers'] ? getallheaders() : false);
-});
-
-// Restrict setting cookies
-$sandbox->defineFunc('setrawcookie', function(string $name, string $value = null, int $expires_or_options = 0, string $path = null, string $domain = null, bool $secure = false, bool $httponly = false) {
-    return (SANDBOX_CONFIG['permissions']['cookies'] ? setrawcookie($name, $value, $expires_or_options, $path, $domain, $secure, $httponly) : false);
-});
-
-$sandbox->defineFunc('setcookie', function(string $name, string $value = "", int $expires_or_options = 0, string $path = "", string $domain = "", bool $secure = false, bool $httponly = false) {
-    return (SANDBOX_CONFIG['permissions']['cookies'] ? setcookie($name, $value, $expires_or_options, $path, $domain, $secure, $httponly) : false);
-});
-
-// Redefine other network functions
-// getservbyname
-$sandbox->defineFunc('getservbyname', function(string $service, string $protocol) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? getservbyname($service, $protocol) : false);
-});
-
-// getservbyport
-$sandbox->defineFunc('getservbyport', function(int $port, string $protocol) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? getservbyport($port, $protocol) : false);
-});
-
-// gethostbyaddr
-$sandbox->defineFunc('gethostbyaddr', function(string $ip) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? gethostbyaddr($ip) : false);
-});
-
-// gethostbyname
-$sandbox->defineFunc('gethostbyname', function(string $hostname) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? gethostbyname($hostname) : false);
-});
-
-// gethostbynamel
-$sandbox->defineFunc('gethostbynamel', function(string $hostname) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? gethostbynamel($hostname) : false);
-});
-
-// dns_check_record
-$sandbox->defineFunc('dns_check_record', function(string $hostname, string $type = "MX") {
-    return (SANDBOX_CONFIG['permissions']['network'] ? dns_check_record($hostname, $type) : false);
-});
-
-// checkdnsrr
-$sandbox->defineFunc('checkdnsrr', function(string $hostname, string $type = "MX") {
-    return (SANDBOX_CONFIG['permissions']['network'] ? checkdnsrr($hostname, $type) : false);
-});
-
-// dns_get_record
-$sandbox->defineFunc('dns_get_record', function(string $hostname, int $type = DNS_ANY, array &$authoritative_name_servers = null, array &$additional_records = null, bool $raw = false) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? dns_get_record($hostname, $type, $authoritative_name_servers, $additional_records, $raw) : false);
-});
-
-// dns_get_mx
-$sandbox->defineFunc('dns_get_mx', function(string $hostname, array &$hosts, array &$weights = null) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? getmxrr($hostname,  $hosts, $weights) : false);
-});
-
-// getmxrr
-$sandbox->defineFunc('getmxrr', function(string $hostname, array &$hosts, array &$weights = null) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? getmxrr($hostname,  $hosts, $weights) : false);
-});
-
-// stream_socket_client
-$sandbox->defineFunc('stream_socket_client', function(string $address, int &$error_code = null, string &$error_message = null, ?float $timeout = null, int $flags = STREAM_CLIENT_CONNECT, ?resource $context = null) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? stream_socket_client($address,  $error_code, $error_message, $timeout, $flags, $context) : false);
-});
-
-// stream_socket_server
-$sandbox->defineFunc('stream_socket_server', function(string $address, int &$error_code = null, string &$error_message = null, int $flags = STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, ?resource $context = null) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? stream_socket_server($address,  $error_code, $error_message, $flags, $context) : false);
-});
-
-// curl_init
-$sandbox->defineFunc('curl_init', function(?string $url = null) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? curl_init($url) : false);
-});
-
-// ftp_connect
-$sandbox->defineFunc('ftp_connect', function(string $hostname, int $port = 21, int $timeout = 90) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? ftp_connect($hostname, $port, $timeout) : false);
-});
-
-// ftp_ssl_connect
-$sandbox->defineFunc('ftp_ssl_connect', function(string $hostname, int $port = 21, int $timeout = 90) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? ftp_ssl_connect($hostname, $port, $timeout) : false);
-});
-
-$sandbox->defineFunc('socket_select', function(?array &$read, ?array &$write, ?array &$except, ?int $seconds, int $microseconds = 0) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? socket_select($read, $write, $except, $seconds, $microseconds) : false);
-});
-
-$sandbox->defineFunc('socket_create_listen', function(int $port, int $backlog = SOMAXCONN) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? socket_create_listen($port, $backlog) : false);
-});
-
-$sandbox->defineFunc('socket_create', function(int $domain, int $type, int $protocol) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? socket_create($domain, $type, $protocol) : false);
-});
-
-$sandbox->defineFunc('socket_create_pair', function(int $domain, int $type, int $protocol, array &$pair) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? socket_create_pair($domain, $type, $protocol, $pair) : false);
-});
-
-$sandbox->defineFunc('socket_addrinfo_bind', function(AddressInfo $address) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? socket_addrinfo_bind($address) : false);
-});
-
-$sandbox->defineFunc('socket_addrinfo_connect', function(AddressInfo $address) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? socket_addrinfo_connect($address) : false);
-});
-
-$sandbox->defineFunc('xmlwriter_open_uri', function(string $uri) {
-    return (SANDBOX_CONFIG['permissions']['network'] ? xmlwriter_open_uri($uri) : false);
-});
-
-// Redefine sleep functions, as sleeping might be disabled
-$sandbox->defineFunc('sleep', function(int $seconds) {
-    return (SANDBOX_CONFIG['permissions']['sleep'] ? sleep($seconds) : false);
-});
-
-$sandbox->defineFunc('usleep', function(int $microseconds) {
-    return (SANDBOX_CONFIG['permissions']['sleep'] ? usleep($microseconds) : false);
-});
-
-$sandbox->defineFunc('time_nanosleep', function(int $seconds, int $nanoseconds) {
-    return (SANDBOX_CONFIG['permissions']['sleep'] ? time_nanosleep($seconds, $nanoseconds) : false);
-});
-
-
-$sandbox->defineFunc('time_sleep_until', function(float $timestamp) {
-    return (SANDBOX_CONFIG['permissions']['sleep'] ? time_sleep_until($timestamp) : false);
-}); 
-
-// Restrict access to executing binaries
-$sandbox->defineFunc('exec', function(string $command, array &$output = null, int &$result_code = null) {
-    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? exec($command, $output, $result_code) : false);
-});
-
-$sandbox->defineFunc('system', function(string $command, int &$result_code = null) {
-    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? system($command, $result_code) : false);
-});
-
-$sandbox->defineFunc('passthru', function(string $command, int &$result_code = null) {
-    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? passthru($command, $result_code) : false);
-});
-
-$sandbox->defineFunc('shell_exec', function(string $command) {
-    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? shell_exec($command) : false);
-});
-
-$sandbox->defineFunc('popen', function(string $command, string $mode) {
-    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? popen($command, $mode) : false);
-});
-
-$sandbox->defineFunc('proc_open', function(array|string $command, array $descriptor_spec, array &$pipes, ?string $cwd = null, ?array $env_vars = null,?array $options = null) {
-    return (SANDBOX_CONFIG['permissions']['bin_exec'] ? proc_open($command, $descriptor_spec, $pipes, $cwd, $env_vars, $options) : false);
-});
-
-// Restrict access to interprocess communication
-$sandbox->defineFunc('posix_kill', function(int $process_id, int $signal) {
-    return (SANDBOX_CONFIG['permissions']['proc_com'] ? posix_kill($process_id, $signal) : false);
-});
-
-$sandbox->defineFunc('msg_get_queue', function(int $key, int $permissions = 0666) {
-    return (SANDBOX_CONFIG['permissions']['proc_com'] ? msg_get_queue($key, $permissions) : false);
-});
-
-$sandbox->defineFunc('msg_queue_exists', function(int $key) {
-    return (SANDBOX_CONFIG['permissions']['proc_com'] ? msg_queue_exists($key) : false);
-});
-
-$sandbox->defineFunc('sem_get', function(int $key, int $max_acquire = 1, int $permissions = 0666, bool $auto_release = true) {
-    return (SANDBOX_CONFIG['permissions']['proc_com'] ? sem_get($key, $max_acquire, $permissions, $auto_release) : false);
-});
-
-$sandbox->defineFunc('stream_socket_pair', function(int $domain, int $type, int $protocol) {
-    return (SANDBOX_CONFIG['permissions']['proc_com'] ? stream_socket_pair($domain, $type, $protocol) : false);
-});
-
-// Reimplement safe includes by finding and injecting to be included files into the sandbox
-function static_include_files($code) {
-    if(SANDBOX_CONFIG['permissions']['include']) {
-        $function_calls = explode(';', $code);
-        $includes = preg_grep("~(include|include_once|require|require_once)~", $function_calls);
-        foreach($includes AS $include) {
-            $filename = preg_replace("~(\"|'|\))~", '', trim(preg_split("~( |\()~", $include)[2]));
-            if(storage_access_granted($filename) AND !isNetworkLocation($filename)) $function_calls[array_search($include, $function_calls)] = preg_replace('~(require|require_once|include|include_once) \(?".*"\)?~', str_replace('?>', '', str_replace('<?php', '', file_get_contents(storage_get_realpath($filename)))), $include);
+    protected function tailorClass(string $class) {
+        if(!class_exists($class.'_SANDBOX_'.$this->id)) eval(str_replace('SANDBOXCONFIG', json_encode($this->config['database']), str_replace('SANDBOXID', $this->id, file_get_contents($class.'.php'))));
+        else echo 'Not first register';
+    }
+
+    protected function storage_access_granted($filename) {
+        try {
+            if(basename($filename) == 'manifest.json' OR (isNetworkLocation($filename) AND !$this->config['permissions']['network']) OR !isAllowedWrapper($filename)) return false; // Applications are not allowed access to their manifest file, they can request configuration info instead
+            else if(file_is_within_folders($this->storage_get_realpath($filename), $this->config['permissions']['storage']) OR $this->config['permissions']['storage'][0] === '*') return true;
+            throw new StorageAccessPolicyViolation();
+            return false;
+        } catch(StorageAccessPolicyViolation $exception) {
+            handleException($exception, $this->config['log'], $this->config['debug']['exceptions']);
         }
-        return implode(';', $function_calls);
     }
-    return false;
+
+    protected function storage_get_realpath($filename) {
+        if(isNetworkLocation($filename)) return $filename;
+        else if(isset($this->config['storage']['fsroot'])) return $this->config['storage']['fsroot'].str_replace('..', '', $filename);
+        else return realpath($filename);
+    }
+
+    public function __construct($config_options) {
+        $this->config = $config_options;
+        $this->id = uniqid();
+
+        $this->PHPSandbox = new \PHPSandbox\PHPSandbox();
+
+        // Initialize the logging system
+        $this->logger = new Logger($this->config['log']);
+
+        // Do some basic sandbox configuration...
+        $this->PHPSandbox->whitelistFunc('SandyPHP_version_info');
+        $this->PHPSandbox->whitelistFunc(SANDBOX_WHITELIST);
+        $this->PHPSandbox->allow_includes = false; //$this->config['permissions']['include'] | false;
+        $this->PHPSandbox->allow_escaping = $this->config['permissions']['escape'] | false;
+        $this->PHPSandbox->allow_functions = $this->config['permissions']['functions'] | false;
+        $this->PHPSandbox->allow_aliases = true;
+        $this->PHPSandbox->validate_types = true;
+        $this->PHPSandbox->auto_whitelist_functions = true;
+        $this->PHPSandbox->allow_classes = true;
+        
+        if(isset($config['exposeScripts'])) {
+            foreach($this->config['exposeScripts']['scripts'] AS $script) {
+                require_once $script;
+            }
+            if(isset($this->config['exposeScripts']['whitelist']['classes']) AND $this->config['exposeScripts']['whitelist']['classes'] !== false) $this->PHPSandbox->whitelistClass($this->config['exposeScripts']['whitelist']['classes']);
+            if(isset($this->config['exposeScripts']['whitelist']['functions']) AND $this->config['exposeScripts']['whitelist']['functions'] !== false) $this->PHPSandbox->whiteListFunc($this->config['exposeScripts']['whitelist']['functions']);
+        }
+
+        // Redefine all functions associated with file handling to enforce storage access restrictions
+
+        // #1 file_get_contents
+        $this->PHPSandbox->defineFunc('file_get_contents', function(string $filename) {
+            if($this->storage_access_granted($filename)) return file_get_contents($this->storage_get_realpath($filename));
+            return false;
+        });
+
+        // #2 file_put_contents
+        $this->PHPSandbox->defineFunc('file_put_contents', function(string $filename, $flags, $ctx = null) {
+            return ($this->storage_access_granted($filename) ? file_put_contents($this->storage_get_realpath($filename), $flags, $ctx) : false);
+        });
+
+
+        // #3 fopen
+        $this->PHPSandbox->defineFunc('fopen', function(string $filename, $mode, $use_include_path = false, $context = null) {
+            return ($this->storage_access_granted($filename) ? fopen($this->storage_get_realpath($filename), $mode, $use_include_path, $context) : false);
+        });
+
+
+        // #4 openssl_x509_export_to_file
+        $this->PHPSandbox->defineFunc('openssl_x509_export_to_file', function($certificate, $output_filename, $no_text = true) {
+            return ($this->storage_access_granted($output_filename) ? openssl_x509_export_to_file($certificate, $this->storage_get_realpath($output_filename), $no_text) : false);
+        });
+
+
+        // #5 openssl_pkcs12_export_to_file
+        $this->PHPSandbox->defineFunc('openssl_pkcs12_export_to_file', function($certificate, string $output_filename, OpenSSLAsymmetricKey|OpenSSLCertificate|array|string $private_key, string $passphrase, array $options = []) {
+            return ($this->storage_access_granted($output_filename) ? openssl_pkcs12_export_to_file($certificate, $this->storage_get_realpath($output_filename), $private_key, $passphrase, $options) : false);
+        });
+
+        // #6 openssl_csr_export_to_file
+        $this->PHPSandbox->defineFunc('openssl_csr_export_to_file', function(OpenSSLCertificateSigningRequest|string $csr, string $output_filename, bool $no_text = true) {
+            return ($this->storage_access_granted($output_filename) ? openssl_csr_export_to_file($csr, $this->storage_get_realpath($output_filename), $no_text) : false);
+        });
+
+        // #7 openssl_pkey_export_to_file
+        $this->PHPSandbox->defineFunc('openssl_pkey_export_to_file', function(OpenSSLAsymmetricKey|OpenSSLCertificate|array|string $key, string $output_filename, ?string $passphrase = null, ?array $options = null) {
+            return ($this->storage_access_granted($output_filename) ? openssl_pkey_export_to_file($key, $this->storage_get_realpath($output_filename), $passphrase, $options) : false);
+        });
+
+        // #8 gzfile
+        $this->PHPSandbox->defineFunc('gzfile', function(string $filename, int $use_include_path = 0) {
+            return ($this->storage_access_granted($filename) ? gzfile($this->storage_get_realpath($filename), $use_include_path) : false);
+        });
+
+        // #9 gzopen
+        $this->PHPSandbox->defineFunc('gzopen', function(string $filename, string $mode, int $use_include_path = 0) {
+            return ($this->storage_access_granted($filename) ? gzopen($this->storage_get_realpath($filename), $mode, $use_include_path) : false);
+        });
+
+        // #10 readgzfile
+        $this->PHPSandbox->defineFunc('readgzfile', function(string $filename, int $use_include_path = 0) {
+            return ($this->storage_access_granted($filename) ? readgzfile($key, $this->storage_get_realpath($output_filename), $passphrase, $options) : false);
+        });
+
+        // #11 hash_file
+        $this->PHPSandbox->defineFunc('hash_file', function(string $algo, string $filename, bool $binary = false, array $options = []) {
+            return ($this->storage_access_granted($filename) ? hash_file($algo, $this->storage_get_realpath($filename), $binary, $options) : false);
+        });
+
+        // #12 hash_hmac_file
+        $this->PHPSandbox->defineFunc('hash_hmac_file', function(string $algo, string $filename, string $key, bool $binary = false) {
+            return ($this->storage_access_granted($filename) ? hash_hmac_file($algo, $this->storage_get_realpath($filename, $key, $binary)) : false);
+        });
+
+        // #13 hash_update_file
+        $this->PHPSandbox->defineFunc('hash_update_file', function(HashContext $context, string $filename, $stream_context = null) {
+            return ($this->storage_access_granted($filename) ? hash_update_file($context, $this->storage_get_realpath($filename), $stream_context) : false);
+        });
+
+        // #14 highlight_file
+        $this->PHPSandbox->defineFunc('highlight_file', function(string $filename, bool $return = false) {
+            return ($this->storage_access_granted($filename) ? highlight_file($this->storage_get_realpath($filename), $return) : false);
+        });
+
+        // #15 is_uploaded_file
+        $this->PHPSandbox->defineFunc('is_uploaded_file', function(string $filename) {
+            return ($this->storage_access_granted($filename) AND $this->config['permissions']['fileupload'] ? is_uploaded_file($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #16 move_uploaded_file
+        $this->PHPSandbox->defineFunc('move_uploaded_file', function(string $from, string $to) {
+            return ($this->storage_access_granted($to) AND $this->config['permissions']['fileupload'] ? move_uploaded_file($from, $this->storage_get_realpath($to)) : false);
+        });
+
+        // #17 parse_ini_file
+        $this->PHPSandbox->defineFunc('parse_ini_file', function(string $filename, bool $process_sections = false, int $scanner_mode = INI_SCANNER_NORMAL) {
+            return ($this->storage_access_granted($filename) ? parse_ini_file($this->storage_get_realpath($filename), $process_sections, $scanner_mode) : false);
+        });
+
+        // #18 md5_file
+        $this->PHPSandbox->defineFunc('md5_file', function(string $filename, bool $binary = false) {
+            return ($this->storage_access_granted($filename) ? md5_file($this->storage_get_realpath($filename), $binary) : false);
+        });
+
+        // #19 sha1_file
+        $this->PHPSandbox->defineFunc('sha1_file', function(string $filename, bool $binary = false) {
+            return ($this->storage_access_granted($filename) ? sha1_file($this->storage_get_realpath($filename), $binary) : false);
+        });
+
+        // #20 readfile
+        $this->PHPSandbox->defineFunc('readfile', function(string $filename, bool $use_include_path = false, $context = null) {
+            return ($this->storage_access_granted($filename) ? readfile($this->storage_get_realpath($filename), $use_include_path, $context) : false);
+        });
+
+        // #21 file
+        $this->PHPSandbox->defineFunc('file', function(string $filename, int $flags = 0, $context = null) {
+            return ($this->storage_access_granted($filename) ? file($this->storage_get_realpath($filename), $flags, $context) : false);
+        });
+
+        // #22 fileatime
+        $this->PHPSandbox->defineFunc('fileatime', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? fileatime($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #23 filectime
+        $this->PHPSandbox->defineFunc('filectime', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? filectime($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #24 filegroup
+        $this->PHPSandbox->defineFunc('filegroup', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? filegroup($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #25 fileinode
+        $this->PHPSandbox->defineFunc('fileinode', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? fileinode($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #26 filemtime
+        $this->PHPSandbox->defineFunc('filemtime', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? filemtime($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #27 fileowner
+        $this->PHPSandbox->defineFunc('fileowner', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? fileowner($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #28 fileperms
+        $this->PHPSandbox->defineFunc('fileperms', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? fileperms($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #29 filesize
+        $this->PHPSandbox->defineFunc('filesize', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? filesize($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #30 filetype
+        $this->PHPSandbox->defineFunc('filetype', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? filetype($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #31 file_exists
+        $this->PHPSandbox->defineFunc('file_exists', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? file_exists($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #32 is_file
+        $this->PHPSandbox->defineFunc('is_file', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? is_file($this->storage_get_realpath($filename)) : false);
+        });
+
+        // #33 finfo_file
+        $this->PHPSandbox->defineFunc('finfo_file', function(finfo $finfo, string $filename, int $flags = FILEINFO_NONE, $context = null) {
+            return ($this->storage_access_granted($filename) ? finfo_file($finfo, $this->storage_get_realpath($filename), $flags, $context) : false);
+        });
+
+        // #34 simplexml_load_file
+        $this->PHPSandbox->defineFunc('simplexml_load_file', function(string $filename, ?string $class_name = SimpleXMLElement::class, int $options = 0, string $namespace_or_prefix = "", bool $is_prefix = false) {
+            return ($this->storage_access_granted($filename) ? simplexml_load_file($this->storage_get_realpath($filename), $class_name, $options, $namespace_or_prefix, $is_prefix) : false);
+        });
+
+        // #35 unlink
+        $this->PHPSandbox->defineFunc('unlink', function(string $filename, $context = null) {
+            return ($this->storage_access_granted($filename) ? unlink($this->storage_get_realpath($filename), $context) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('opendir', function(string $directory, $context = null) {
+            return ($this->storage_access_granted($directory) ? opendir($this->storage_get_realpath($directory), $context) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('dir', function(string $directory, $context = null) {
+            return ($this->storage_access_granted($directory) ? dir($this->storage_get_realpath($directory), $context) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('get_meta_tags', function(string $filename, bool $use_include_path = false) {
+            return ($this->storage_access_granted($filename) ? get_meta_tags($this->storage_get_realpath($filename), $use_include_path) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('rmdir', function(string $directory, $context = null) {
+            return ($this->storage_access_granted($directory) ? rmdir($this->storage_get_realpath($directory), $context) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('mkdir', function(string $directory, int $permissions = 0777, bool $recursive = false, $context = null) {
+            return ($this->storage_access_granted($directory) ? mkdir($this->storage_get_realpath($directory), $permissions) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('rename', function(string $from, string $to, $context = null) {
+            return ($this->storage_access_granted($from) AND $this->storage_access_granted($to) ? rename($this->storage_get_realpath($from), $this->storage_get_realpath($to), $context) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('copy', function(string $from, string $to, $context = null) {
+            return ($this->storage_access_granted($from) AND $this->storage_access_granted($to) ? copy($this->storage_get_realpath($from), $this->storage_get_realpath($to), $context) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('tempnam', function(string $directory, string $prefix) {
+            return ($this->storage_access_granted($directory) ? tempnam($this->storage_get_realpath($directory), $prefix) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('is_writable', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? is_writable($this->storage_get_realpath($filename)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('is_writeable', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? is_writeable($this->storage_get_realpath($filename)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('is_readable', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? is_readable($this->storage_get_realpath($filename)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('is_executable', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? is_executable($this->storage_get_realpath($filename)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('is_dir', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? is_dir($this->storage_get_realpath($filename)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('is_link', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? is_link($this->storage_get_realpath($filename)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('stat', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? stat($this->storage_get_realpath($filename)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('lstat', function(string $filename) {
+            return ($this->storage_access_granted($filename) ? lstat($this->storage_get_realpath($filename)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('chown', function(string $filename, string|int $user) {
+            return ($this->storage_access_granted($filename) ? chown($this->storage_get_realpath($filename), $user) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('chgrp', function(string $filename, string|int $group) {
+            return ($this->storage_access_granted($filename) ? chgrp($this->storage_get_realpath($filename), $group) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('lchown', function(string $filename, string|int $user) {
+            return ($this->storage_access_granted($filename) ? lchown($this->storage_get_realpath($filename), $user) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('lchgrp', function(string $filename, string|int $group) {
+            return ($this->storage_access_granted($filename) ? lchgrp($this->storage_get_realpath($filename), $group) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('chmod', function(string $filename, int $permissions) {
+            return ($this->storage_access_granted($filename) ? chmod($this->storage_get_realpath($filename), $permissions) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('touch', function(string $filename, ?int $mtime = null, ?int $atime = null) {
+            return ($this->storage_access_granted($filename) ? touch($this->storage_get_realpath($filename), $mtime, $atime) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('disk_total_space', function(string $directory) {
+            return ($this->storage_access_granted($directory) AND $this->config['permissions']['hostinfo'] ? disk_total_space($this->storage_get_realpath($directory)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('disk_free_space', function(string $directory) {
+            return ($this->storage_access_granted($directory) AND $this->config['permissions']['hostinfo'] ? disk_free_space($this->storage_get_realpath($directory)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('diskfreespace', function(string $directory) {
+            return ($this->storage_access_granted($directory) AND $this->config['permissions']['hostinfo'] ? diskfreespace($this->storage_get_realpath($directory)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('fsockopen', function(string $hostname, int $port = -1, int &$error_code = null, string &$error_message = null, ?float $timeout = null) {
+            return ($this->storage_access_granted($hostname) ? fsockopen($this->storage_get_realpath($hostname), $port, $error_code, $error_message, $timeout) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('pfsockopen', function(string $hostname, int $port = -1, int &$error_code = null, string &$error_message = null, ?float $timeout = null) {
+            return ($this->storage_access_granted($hostname) ? pfsockopen($this->storage_get_realpath($hostname), $port, $error_code, $error_message, $timeout) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('getimagesize', function(string $filename, array &$image_info = null) {
+            return ($this->storage_access_granted($hostname) ? getimagesize($this->storage_get_realpath($filename), $image_info) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('iptcembed', function(string $iptc_data, string $filename, int $spool = 0) {
+            return ($this->storage_access_granted($filename) ? iptcembed($iptc_data, $this->storage_get_realpath($filename), $spool) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('readlink', function(string $path) {
+            return ($this->storage_access_granted($path) ? readlink($this->storage_get_realpath($path)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('linkinfo', function(string $path) {
+            return ($this->storage_access_granted($path) ? linkinfo($this->storage_get_realpath($path)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('symlink', function(string $target, string $link) {
+            return ($this->storage_access_granted($target) AND $this->storage_access_granted($link) ? symlink($this->storage_get_realpath($target), $this->storage_get_realpath($link)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('link', function(string $target, string $link) {
+            return ($this->storage_access_granted($target) AND $this->storage_access_granted($link) ? link($this->storage_get_realpath($target), $this->storage_get_realpath($link)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('bzopen', function(string|resource $file, string $mode) {
+            return (($this->storage_access_granted($file) OR get_resource_type($file) == 'stream') ? bzopen((get_resource_type($file) == 'stream' ? $file : $this->storage_get_realpath($file)), $mode): false);
+        });
+
+        $this->PHPSandbox->defineFunc('ftp_get', function(FTP\Connection $ftp, string $local_filename, string $remote_filename, int $mode = FTP_BINARY, int $offset = 0) {
+            return ($this->storage_access_granted($local_filename) AND $this->config['permissions']['network'] ? ftp_get($ftp, $this->storage_get_realpath($local_filename), $remote_filename, $mode, $offset) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('ftp_put', function(FTP\Connection $ftp, string $remote_filename, string $local_filename, int $mode = FTP_BINARY, int $offset = 0) {
+            return ($this->storage_access_granted($local_filename) AND $this->config['permissions']['network'] ? ftp_put($ftp, $remote_filename, $this->storage_get_realpath($local_filename), $mode, $offset) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('ftp_append', function(FTP\Connection $ftp, string $remote_filename, string $local_filename, int $mode = FTP_BINARY) {
+            return ($this->storage_access_granted($local_filename) AND $this->config['permissions']['network'] ? ftp_append($ftp, $remote_filename, $this->storage_get_realpath($local_filename), $mode) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('ftp_nb_put', function(FTP\Connection $ftp, string $remote_filename, string $local_filename, int $mode = FTP_BINARY, int $offset = 0) {
+            return ($this->storage_access_granted($local_filename) AND $this->config['permissions']['network'] ? ftp_nb_put($ftp, $remote_filename, $this->storage_get_realpath($local_filename), $mode, $offset) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_mkfifo', function(string $filename, int $permissions) {
+            return ($this->storage_access_granted($filename) ? posix_mkfifo($this->storage_get_realpath($filename), $permissions) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_mknod', function(string $filename, int $flags, int $major = 0, int $minor = 0) {
+            return ($this->storage_access_granted($filename) ? posix_mknod($this->storage_get_realpath($filename), $flags, $major, $minor) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_access', function(string $filename, int $flags = 0) {
+            return ($this->storage_access_granted($filename) ? posix_access($this->storage_get_realpath($filename), $flags) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('chdir', function(string $directory) {
+            return ($this->storage_access_granted($directory) ? chdir($this->storage_get_realpath($directory)) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('scandir', function(string $directory, int $sorting_order = SCANDIR_SORT_ASCENDING, ?resource $context = null) {
+            return ($this->storage_access_granted($directory) ? scandir($this->storage_get_realpath($directory), $sorting_order, $context) : false);
+        });
+
+        // Restrict ability to send emails
+        $this->PHPSandbox->defineFunc('mail', function(string $to, string $subject, string $message, array|string $additional_headers = [], string $additional_params = "") {
+            return ($this->config['permissions']['mail'] ? mail($to, $subject, $message, $additional_headers, $additional_params) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('mb_send_mail', function(string $to, string $subject, string $message, array|string $additional_headers = [], string $additional_params = "") {
+            return ($this->config['permissions']['mail'] ? mb_send_mail($to, $subject, $message, $additional_headers, $additional_params) : false);
+        });
+
+        // Some functions need to be disabled but should not throw errors inside the sandbox in order for scripts using them not to fail, so they are redefined returning a value which won't cause most scripts to fail...
+        // #36 ini_set
+        $this->PHPSandbox->defineFunc('ini_set', function(string $option, string|int|float|bool|null $value) {
+            return false;
+        });
+
+        // #37 ini_alter
+        $this->PHPSandbox->defineFunc('ini_alter', function(string $option, string|int|float|bool|null $value) {
+            return false;
+        });
+
+        // #38 ini_restore
+        $this->PHPSandbox->defineFunc('ini_restore', function(string $option) {
+            return false;
+        });
+
+        // #39 set_include_path
+        $this->PHPSandbox->defineFunc('set_include_path', function(string $include_path) {
+            return false;
+        });
+
+        // #40 ignore_user_abort
+        $this->PHPSandbox->defineFunc('ignore_user_abort', function(?bool $enable = null) {
+            return false;
+        });
+
+        $this->PHPSandbox->defineFunc('pdo_drivers', function() {
+            return array_map(function($driver) {
+                if(in_array($driver, SANDBOX_SUPPORTED_PDO_DRIVERS)) return 'SandyPHPVirtPDODriver for '.$driver;
+                return 'No SandyPHPVirtPDODriver for '.$driver;
+            }, pdo_drivers());
+        });
+
+
+        // Restrict access to host information
+        // gethostname
+        $this->PHPSandbox->defineFunc('gethostname', function() {
+            return ($this->config['permissions']['hostinfo'] ? gethostname() : 'PHPSandboxVirtEnv');
+        });
+
+        $this->PHPSandbox->defineFunc('net_get_interfaces', function() {
+            try {
+                return ($this->config['permissions']['hostinfo'] ? net_get_interfaces() : false);
+            } catch(SandyPHPException $exception) {
+                handleException($exception);
+            }
+        });
+
+        $this->PHPSandbox->defineFunc('getmyuid', function() {
+            return ($this->config['permissions']['hostinfo'] ? getmyuid() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('getmygid', function() {
+            return ($this->config['permissions']['hostinfo'] ? getmygid() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('getmypid', function() {
+            return ($this->config['permissions']['hostinfo'] ? getmypid() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('getmyinode', function() {
+            return ($this->config['permissions']['hostinfo'] ? getmyinode() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('getlastmod', function() {
+            return ($this->config['permissions']['hostinfo'] ? getlastmod() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('openlog', function(string $prefix, int $flags, int $facility) {
+            return ($this->config['permissions']['hostinfo'] ? openlog($prefix, $flags, $facility) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('sys_getloadavg', function() {
+            return ($this->config['permissions']['hostinfo'] ? sys_getloadavg() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('get_current_user', function() {
+            return ($this->config['permissions']['hostinfo'] ? get_current_user() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('sys_get_temp_dir', function() {
+            return ($this->config['permissions']['hostinfo'] ? sys_get_temp_dir() : 'PHPSandboxVirtStorage');
+        });
+
+        $this->PHPSandbox->defineFunc('phpinfo', function() {
+            return ($this->config['permissions']['hostinfo'] ? phpinfo() : 'SandyPHP');
+        });
+
+        $this->PHPSandbox->defineFunc('phpversion', function() {
+            return ($this->config['permissions']['hostinfo'] ? phpversion() : 'SandyPHP 0.0.0beta');
+        });
+
+        $this->PHPSandbox->defineFunc('phpcredits', function() {
+            return ($this->config['permissions']['hostinfo'] ? phpcredits() : 'Credits can be found on the PHP website, this feature is disabled for security reasons, big thanks to the PHP guys anyway!');
+        });
+
+        $this->PHPSandbox->defineFunc('php_sapi_name', function() {
+            return ($this->config['permissions']['hostinfo'] ? php_sapi_name() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('php_uname', function(string $mode = "a") {
+            return ($this->config['permissions']['hostinfo'] ? php_uname($mode) : 'SandyPHP');
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getpid', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_getpid() : 1801332415715); // Number is for the letters in SandyPHP
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getppid', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_getppid() : 1801332415715); // Number is for the letters in SandyPHP
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getuid', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_getuid() : 'SandyPHPVirtUser');
+        });
+
+        $this->PHPSandbox->defineFunc('posix_setuid', function(int $user_id) {
+            return ($this->config['permissions']['hostinfo'] ? posix_setuid($user_id) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_geteuid', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_geteuid() : 'SandyPHPVirtUser');
+        });
+
+        $this->PHPSandbox->defineFunc('posix_seteuid', function(int $user_id) {
+            return ($this->config['permissions']['hostinfo'] ? posix_seteuid($user_id) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getgid', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_getgid() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_setgid', function(int $group_id) {
+            return ($this->config['permissions']['hostinfo'] ? posix_setgid($group_id) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getegid', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_getegid() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_setegid', function(int $group_id) {
+            return ($this->config['permissions']['hostinfo'] ? posix_setegid($group_id) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getgroups', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_getgroups() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getlogin', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_getlogin() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getpgrp', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_getpgrp() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_setsid', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_setsid() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_setpgid', function(int $process_id, int $process_group_id) {
+            return ($this->config['permissions']['hostinfo'] ? posix_setpgid($process_id, $process_group_id) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getpgid', function(int $process_id) {
+            return ($this->config['permissions']['hostinfo'] ? posix_getpgid($process_id) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getsid', function(int $process_id) {
+            return ($this->config['permissions']['hostinfo'] ? posix_getsid($process_id) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_uname', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_uname() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_times', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_times() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_ctermid', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_ctermid() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_ttyname', function(resource|int $file_descriptor) {
+            return ($this->config['permissions']['hostinfo'] ? posix_ttyname($file_descriptor) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_isatty', function(resource|int $file_descriptor) {
+            return ($this->config['permissions']['hostinfo'] ? posix_isatty($file_descriptor) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_initgroups', function(string $username, int $group_id) {
+            return ($this->config['permissions']['hostinfo'] ? posix_initgroups($username, $group_id) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getcwd', function() {
+            return ($this->config['permissions']['hostinfo'] ? posix_getcwd() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getgrnam', function(string $name) {
+            return ($this->config['permissions']['hostinfo'] ? posix_getgrnam($name) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getgrgid', function(string $group_id) {
+            return ($this->config['permissions']['hostinfo'] ? posix_getgrgid($group_id) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getpwnam', function(string $username) {
+            return ($this->config['permissions']['hostinfo'] ? posix_getpwnam($username) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getpwuid', function(string $user_id) {
+            return ($this->config['permissions']['hostinfo'] ? posix_getpwuid($user_id) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_getrlimit', function(?int $resource = null) {
+            return ($this->config['permissions']['hostinfo'] ? posix_getrlimit($resource) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('posix_setrlimit', function(int $resource, int $soft_limit, int $hard_limit) {
+            return ($this->config['permissions']['hostinfo'] ? posix_setrlimit($resource, $soft_limit, $hard_limit) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('getrusage', function(int $mode = 0) {
+            return ($this->config['permissions']['hostinfo'] ? getrusage($mode) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('session_save_path', function(?string $path = null) {
+            return ($this->config['permissions']['hostinfo'] ? session_save_path($path) : false);
+        });
+
+        // Restrict shared memory usage
+        $this->PHPSandbox->defineFunc('shmop_open', function(int $key, string $mode, int $permissions, int $size) {
+            return ($this->config['permissions']['sharedmemory'] ? shmop_open($key, $mode, $permissions, $size) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('shmop_read', function(Shmop $shmop, int $offset, int $size) {
+            return ($this->config['permissions']['sharedmemory'] ? shmop_read($shmop, $offset, $size) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('shmop_size', function(Shmop $shmop) {
+            return ($this->config['permissions']['sharedmemory'] ? shmop_read($shmop) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('shmop_write', function(Shmop $shmop, string $data, int $offset) {
+            return ($this->config['permissions']['sharedmemory'] ? shmop_read($shmop, $data, $offset) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('shmop_delete', function(Shmop $shmop) {
+            return ($this->config['permissions']['sharedmemory'] ? shmop_read($shmop) : false);
+        });
+
+        // Restrict rewriting headers
+        $this->PHPSandbox->defineFunc('header', function(string $header, bool $replace = true, int $response_code = 0) {
+            return ($this->config['permissions']['headers'] ? header($header, $replace, $response_code) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('http_response_code', function(int $response_code = 0) {
+            return ($this->config['permissions']['headers'] ? http_response_code($response_code) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('get_headers', function(string $url, bool $associative = false, ?resource $context = null) {
+            return ($this->config['permissions']['headers'] ? get_headers($url, $associative = false, $context) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('apache_request_headers', function() {
+            return ($this->config['permissions']['headers'] ? apache_request_headers() : false);
+        });
+
+        $this->PHPSandbox->defineFunc('getallheaders', function() {
+            return ($this->config['permissions']['headers'] ? getallheaders() : false);
+        });
+
+        // Restrict setting cookies
+        $this->PHPSandbox->defineFunc('setrawcookie', function(string $name, string $value = null, int $expires_or_options = 0, string $path = null, string $domain = null, bool $secure = false, bool $httponly = false) {
+            return ($this->config['permissions']['cookies'] ? setrawcookie($name, $value, $expires_or_options, $path, $domain, $secure, $httponly) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('setcookie', function(string $name, string $value = "", int $expires_or_options = 0, string $path = "", string $domain = "", bool $secure = false, bool $httponly = false) {
+            return ($this->config['permissions']['cookies'] ? setcookie($name, $value, $expires_or_options, $path, $domain, $secure, $httponly) : false);
+        });
+
+        // Redefine other network functions
+        // getservbyname
+        $this->PHPSandbox->defineFunc('getservbyname', function(string $service, string $protocol) {
+            return ($this->config['permissions']['network'] ? getservbyname($service, $protocol) : false);
+        });
+
+        // getservbyport
+        $this->PHPSandbox->defineFunc('getservbyport', function(int $port, string $protocol) {
+            return ($this->config['permissions']['network'] ? getservbyport($port, $protocol) : false);
+        });
+
+        // gethostbyaddr
+        $this->PHPSandbox->defineFunc('gethostbyaddr', function(string $ip) {
+            return ($this->config['permissions']['network'] ? gethostbyaddr($ip) : false);
+        });
+
+        // gethostbyname
+        $this->PHPSandbox->defineFunc('gethostbyname', function(string $hostname) {
+            return ($this->config['permissions']['network'] ? gethostbyname($hostname) : false);
+        });
+
+        // gethostbynamel
+        $this->PHPSandbox->defineFunc('gethostbynamel', function(string $hostname) {
+            return ($this->config['permissions']['network'] ? gethostbynamel($hostname) : false);
+        });
+
+        // dns_check_record
+        $this->PHPSandbox->defineFunc('dns_check_record', function(string $hostname, string $type = "MX") {
+            return ($this->config['permissions']['network'] ? dns_check_record($hostname, $type) : false);
+        });
+
+        // checkdnsrr
+        $this->PHPSandbox->defineFunc('checkdnsrr', function(string $hostname, string $type = "MX") {
+            return ($this->config['permissions']['network'] ? checkdnsrr($hostname, $type) : false);
+        });
+
+        // dns_get_record
+        $this->PHPSandbox->defineFunc('dns_get_record', function(string $hostname, int $type = DNS_ANY, array &$authoritative_name_servers = null, array &$additional_records = null, bool $raw = false) {
+            return ($this->config['permissions']['network'] ? dns_get_record($hostname, $type, $authoritative_name_servers, $additional_records, $raw) : false);
+        });
+
+        // dns_get_mx
+        $this->PHPSandbox->defineFunc('dns_get_mx', function(string $hostname, array &$hosts, array &$weights = null) {
+            return ($this->config['permissions']['network'] ? getmxrr($hostname,  $hosts, $weights) : false);
+        });
+
+        // getmxrr
+        $this->PHPSandbox->defineFunc('getmxrr', function(string $hostname, array &$hosts, array &$weights = null) {
+            return ($this->config['permissions']['network'] ? getmxrr($hostname,  $hosts, $weights) : false);
+        });
+
+        // stream_socket_client
+        $this->PHPSandbox->defineFunc('stream_socket_client', function(string $address, int &$error_code = null, string &$error_message = null, ?float $timeout = null, int $flags = STREAM_CLIENT_CONNECT, ?resource $context = null) {
+            return ($this->config['permissions']['network'] ? stream_socket_client($address,  $error_code, $error_message, $timeout, $flags, $context) : false);
+        });
+
+        // stream_socket_server
+        $this->PHPSandbox->defineFunc('stream_socket_server', function(string $address, int &$error_code = null, string &$error_message = null, int $flags = STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, ?resource $context = null) {
+            return ($this->config['permissions']['network'] ? stream_socket_server($address,  $error_code, $error_message, $flags, $context) : false);
+        });
+
+        // curl_init
+        $this->PHPSandbox->defineFunc('curl_init', function(?string $url = null) {
+            return ($this->config['permissions']['network'] ? curl_init($url) : false);
+        });
+
+        // ftp_connect
+        $this->PHPSandbox->defineFunc('ftp_connect', function(string $hostname, int $port = 21, int $timeout = 90) {
+            return ($this->config['permissions']['network'] ? ftp_connect($hostname, $port, $timeout) : false);
+        });
+
+        // ftp_ssl_connect
+        $this->PHPSandbox->defineFunc('ftp_ssl_connect', function(string $hostname, int $port = 21, int $timeout = 90) {
+            return ($this->config['permissions']['network'] ? ftp_ssl_connect($hostname, $port, $timeout) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('socket_select', function(?array &$read, ?array &$write, ?array &$except, ?int $seconds, int $microseconds = 0) {
+            return ($this->config['permissions']['network'] ? socket_select($read, $write, $except, $seconds, $microseconds) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('socket_create_listen', function(int $port, int $backlog = SOMAXCONN) {
+            return ($this->config['permissions']['network'] ? socket_create_listen($port, $backlog) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('socket_create', function(int $domain, int $type, int $protocol) {
+            return ($this->config['permissions']['network'] ? socket_create($domain, $type, $protocol) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('socket_create_pair', function(int $domain, int $type, int $protocol, array &$pair) {
+            return ($this->config['permissions']['network'] ? socket_create_pair($domain, $type, $protocol, $pair) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('socket_addrinfo_bind', function(AddressInfo $address) {
+            return ($this->config['permissions']['network'] ? socket_addrinfo_bind($address) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('socket_addrinfo_connect', function(AddressInfo $address) {
+            return ($this->config['permissions']['network'] ? socket_addrinfo_connect($address) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('xmlwriter_open_uri', function(string $uri) {
+            return ($this->config['permissions']['network'] ? xmlwriter_open_uri($uri) : false);
+        });
+
+        // Redefine sleep functions, as sleeping might be disabled
+        $this->PHPSandbox->defineFunc('sleep', function(int $seconds) {
+            return ($this->config['permissions']['sleep'] ? sleep($seconds) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('usleep', function(int $microseconds) {
+            return ($this->config['permissions']['sleep'] ? usleep($microseconds) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('time_nanosleep', function(int $seconds, int $nanoseconds) {
+            return ($this->config['permissions']['sleep'] ? time_nanosleep($seconds, $nanoseconds) : false);
+        });
+
+
+        $this->PHPSandbox->defineFunc('time_sleep_until', function(float $timestamp) {
+            return ($this->config['permissions']['sleep'] ? time_sleep_until($timestamp) : false);
+        }); 
+
+        // Restrict access to executing binaries
+        $this->PHPSandbox->defineFunc('exec', function(string $command, array &$output = null, int &$result_code = null) {
+            return ($this->config['permissions']['bin_exec'] ? exec($command, $output, $result_code) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('system', function(string $command, int &$result_code = null) {
+            return ($this->config['permissions']['bin_exec'] ? system($command, $result_code) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('passthru', function(string $command, int &$result_code = null) {
+            return ($this->config['permissions']['bin_exec'] ? passthru($command, $result_code) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('shell_exec', function(string $command) {
+            return ($this->config['permissions']['bin_exec'] ? shell_exec($command) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('popen', function(string $command, string $mode) {
+            return ($this->config['permissions']['bin_exec'] ? popen($command, $mode) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('proc_open', function(array|string $command, array $descriptor_spec, array &$pipes, ?string $cwd = null, ?array $env_vars = null,?array $options = null) {
+            return ($this->config['permissions']['bin_exec'] ? proc_open($command, $descriptor_spec, $pipes, $cwd, $env_vars, $options) : false);
+        });
+
+        // Restrict access to interprocess communication
+        $this->PHPSandbox->defineFunc('posix_kill', function(int $process_id, int $signal) {
+            return ($this->config['permissions']['proc_com'] ? posix_kill($process_id, $signal) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('msg_get_queue', function(int $key, int $permissions = 0666) {
+            return ($this->config['permissions']['proc_com'] ? msg_get_queue($key, $permissions) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('msg_queue_exists', function(int $key) {
+            return ($this->config['permissions']['proc_com'] ? msg_queue_exists($key) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('sem_get', function(int $key, int $max_acquire = 1, int $permissions = 0666, bool $auto_release = true) {
+            return ($this->config['permissions']['proc_com'] ? sem_get($key, $max_acquire, $permissions, $auto_release) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('stream_socket_pair', function(int $domain, int $type, int $protocol) {
+            return ($this->config['permissions']['proc_com'] ? stream_socket_pair($domain, $type, $protocol) : false);
+        });
+
+        // Reimplement the procedural style functions for mysqli
+        $this->PHPSandbox->defineFunc('mysqli_connect', function(?string $hostname = null, ?string $username = null, #[\SensitiveParameter] ?string $password = null, ?string $database = null, ?int $port = null, ?string $socket = null) {
+            return ((in_array($hostname, $this->config['database']['mysql']['hosts']) AND in_array($database, $this->config['database']['mysql']['database_names'])) ? mysqli_connect($hostname, $username, $password, $database, $port, $socket) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('mysqli_execute_query', function(mysqli $mysql, string $query, ?array $params = null) {
+            return (checkQuery($query, 'mysql', $this->config['database']) ? mysqli_execute_query($mysql, $query, $params) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('mysqli_multi_query', function(mysqli $mysql, string $query) {
+            return (checkQuery($query, 'mysql', $this->config['database']) ? mysqli_multi_query($mysql, $query) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('mysqli_prepare', function(mysqli $mysql, string $query) {
+            return (checkQuery($query, 'mysql', $this->config['database']) ? mysqli_prepare($mysql, $query) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('mysqli_query', function(mysqli $mysql, string $query, int $result_mode = MYSQLI_STORE_RESULT) {
+            return (checkQuery($query, 'mysql', $this->config['database']) ? mysqli_query($mysql, $query, $result_mode) : false);
+        });
+
+        $this->PHPSandbox->defineFunc('mysqli_real_connect', function(?string $hostname = null, ?string $username = null, #[\SensitiveParameter] ?string $password = null, ?string $database = null, ?int $port = null, ?string $socket = null, int $flags = 0) {
+            return ((in_array($hostname, $this->config['database']['mysql']['hosts']) AND in_array($database, $this->config['database']['mysql']['database_names'])) ? mysqli_real_connect($hostname, $username, $password, $database, $port, $socket, $flags) : false);
+        });
+
+
+        // Add empty functions to prevent errors inside the sandbox and make normal includes (which wouldn't respect storage restrictions) provided by the sandboxing library useless
+        $this->PHPSandbox->defineFunc('include', function() {});
+        $this->PHPSandbox->defineFunc('include_once', function() {});
+        $this->PHPSandbox->defineFunc('require', function() {});
+        $this->PHPSandbox->defineFunc('require_once', function() {});
+
+        // redefine zend_version function
+        $this->PHPSandbox->defineFunc('zend_version', function() {
+            return 'SandyPHP based on zend: '.zend_version();
+        });
+
+        $this->PHPSandbox->blacklistClass(['PDO' => 'PDO']);
+        $this->PHPSandbox->blacklistClass(['mysqli' => 'mysqli']);
+        
+
+        // Make sure these classes only exist if the respective driver is enabled
+        if(isset($this->config['database']['mysql'])) {
+            if (function_exists('mysqli_init') && extension_loaded('mysqli')) {
+                $this->tailorClass('SandyPHPVirtMySQLIDriver');
+                $this->PHPSandbox->defineClass('mysqli', 'SandyPHPVirtMySQLIDriver_SANDBOX_'.$this->id);
+            } else {
+                require_once 'MYSQLIwarning.php';
+                $this->PHPSandbox->defineClass('mysqli', 'MySQLIErrorDummy');
+            }
+        }
+        if(isset($this->config['database']['mysql']) OR isset($this->config['database']['sqlite'])) {
+            $this->tailorClass('SandyPHPVirtPDODriver');
+            $this->PHPSandbox->defineClass('PDO', 'SandyPHPVirtPDODriver_SANDBOX_'.$this->id);
+        }
+    }
+
+    public function runFile(string $filename, bool $print_output = true) {
+        return $this->run(file_get_contents($filename), $print_output);
+    }
+
+    public function run(string $code, bool $print_output = true) {
+        $this->PHPSandbox->execute($this->static_include_files($code));
+        return ($print_output ? ob_get_contents() : ob_get_clean());
+    }
+
+    public function setOption(string $option, $value) {
+        $config[$option] = $value;
+    }
+
+    // Reimplement safe includes by finding and injecting to be included files into the sandbox
+    protected function static_include_files($code) {
+        if($this->config['permissions']['include']) {
+            $function_calls = explode(';', $code);
+            $includes = preg_grep("~(include|include_once|require|require_once)~", $function_calls);
+            foreach($includes AS $include) {
+                $filename = preg_replace("~(\"|'|\))~", '', trim(preg_split("~( |\()~", $include)[2]));
+                // Includes over the network are explicitely disabled for security reasons
+                if($this->storage_access_granted($filename) AND !isNetworkLocation($filename)) $function_calls[array_search($include, $function_calls)] = preg_replace('~(require|require_once|include|include_once) \(?".*"\)?~', str_replace('?>', '', str_replace('<?php', '', file_get_contents($this->storage_get_realpath($filename)))), $include);
+            }
+            return implode(';', $function_calls);
+        }
+        return false;
+    }
+
 }
 
-// Add empty functions to prevent errors inside the sandbox and make normal includes (which wouldn't respect storage restrictions) provided by the sandboxing library useless
-$sandbox->defineFunc('include', function() {});
-$sandbox->defineFunc('include_once', function() {});
-$sandbox->defineFunc('require', function() {});
-$sandbox->defineFunc('require_once', function() {});
 
-$sandbox->blacklistClass('PDO');
+$sbox = new SandyPHPSandbox(SANDBOX_CONFIG);
+var_dump($sbox->runFile('testscript.sphp'));
 
+//ob_end_flush();
 
-// redefine zend_version function
-$sandbox->defineFunc('zend_version', function() {
-    return 'SandyPHP based on zend: '.zend_version();
-});
-
-$sandbox->blacklistClass(['PDO' => 'PDO']);
-$sandbox->blacklistClass(['mysqli' => 'mysqli']);
-$sandbox->defineClass('mysqli', 'SandyPHPVirtMySQLIDriver');
-
-$sandbox->execute(static_include_files('<?php new mysqli(); ?>'));
-
-ob_end_flush();
-
-var_dump(memory_get_peak_usage() / 1000000);
+echo "\nSandyPHP exited successfully and used ".(memory_get_peak_usage() / 1000000)."mb of RAM during peaks\n";
 ?>
