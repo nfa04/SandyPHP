@@ -1,5 +1,9 @@
 <?php
 
+    interface Loggable {
+        public function getLoggableMessage();
+    }
+
     class Logger {
 
         protected $output_file;
@@ -11,17 +15,10 @@
             stream_set_blocking($this->filehandle, false);
         }
 
-        public function logException(SandyPHPException $exception) {
-            fwrite($this->filehandle, $exception->getLoggableMessage()."\n");
+        public function log(SandyPHPException|SandyPHPNotice|SandyPHPError|Loggable $event) {
+            fwrite($this->filehandle, $event->getLoggableMessage()."\n");
         }
 
-        public function logError(SandyPHPError $error) {
-            fwrite($this->filehandle, $error->getLoggableMessage());
-        }
-
-        public function logNotice(SandyPHPNotice $notice) {
-            fwrite($this->filehandle, $notice->getLoggableMessage());
-        }
         
     }
 
