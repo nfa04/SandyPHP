@@ -6,7 +6,7 @@
         "storage": ["*"],
         "network": true,
         "include": true,
-        "sleep": false,
+        "sleep": true,
         "bin_exec": true,
         "iproc_com": false,
         "sharedmemory": true,
@@ -20,8 +20,15 @@
             "actions": ["SELECT"]
         }
     },
-    "log": "../log.txt",
-    "debug": {
-        "exceptions": true
+    "log": {
+        "file": "../log.txt",
+        "level": {
+            "exception": true,
+            "notice": true
+        }
+    },
+    "debug_output": {
+        "exception": true,
+        "notice": false
     }
  }

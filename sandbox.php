@@ -66,7 +66,7 @@ class SandyPHPSandbox {
     protected function storage_access_granted($filename) {
             if(basename($filename) == 'manifest.json' OR (isNetworkLocation($filename) AND !$this->network_access_granted()) OR !isAllowedWrapper($filename)) return false; // Applications are not allowed access to their manifest file, they can request configuration info instead
             else if(file_is_within_folders($this->storage_get_realpath($filename), $this->config['permissions']['storage']) OR $this->config['permissions']['storage'][0] === '*') {
-                $this->logger->log(new StorageAccessNotice($this->storage_get_realpath($filename)));
+                $this->logger->log(new StorageAccessNotice($this->storage_get_realpath($filename), $this->config['debug_output']['notice']));
                 return true;
             }
             $ex = new StorageAccessPolicyViolation($this->storage_get_realpath($filename));
@@ -82,7 +82,7 @@ class SandyPHPSandbox {
             throw $networkException;
             return false;
         }
-        $this->logger->log(new NetworkAccessNotice());
+        $this->logger->log(new NetworkAccessNotice($this->config['debug_output']['notice']));
         return true;
     }
 
@@ -93,7 +93,7 @@ class SandyPHPSandbox {
             throw $sharedmemException;
             return false;
         }
-        $this->logger->log(new SharedMemoryAccessNotice());
+        $this->logger->log(new SharedMemoryAccessNotice($this->config['debug_output']['notice']));
         return true;
     }
 
@@ -104,7 +104,7 @@ class SandyPHPSandbox {
             throw $binExecException;
             return false;
         } 
-        $this->logger->log(new BinaryExecutionNotice($binary_id));
+        $this->logger->log(new BinaryExecutionNotice($binary_id, $this->config['debug_output']['notice']));
         return true;
     }
 
@@ -115,17 +115,17 @@ class SandyPHPSandbox {
             throw $iprocException;
             return false;
         } 
-        $this->logger->log(new InterprocessCommunicationNotice());
+        $this->logger->log(new InterprocessCommunicationNotice($this->config['debug_output']['notice']));
         return true;
 
     }
 
     protected function hostinfo_access_granted() {
         if(!$this->config['permissions']['hostinfo'] OR !isset($this->config['permissions']['hostinfo'])) {
-            $this->logger->log(new HostInfoAccessNotice(false));
+            $this->logger->log(new HostInfoAccessNotice(false, $this->config['debug_output']['notice']));
             return false;
         } 
-        $this->logger->log(new HostInfoAccessNotice(true));
+        $this->logger->log(new HostInfoAccessNotice(true, $this->config['debug_output']['notice']));
         return true;
     }
 
@@ -141,10 +141,14 @@ class SandyPHPSandbox {
 
         ob_start(); // Start an output buffer as it might have been flushed
 
+        // Create the PHPSandbox SandyPHP is based on
         $this->PHPSandbox = new \PHPSandbox\PHPSandbox();
 
         // Initialize the logging system
-        $this->logger = new Logger($this->config['log']);
+        $this->logger = new Logger($this->config['log']['file']);
+        $this->logger->setExceptionsEnabled((isset($this->config['log']['level']['exception']) ? $this->config['log']['level']['exception'] : true)); // Default value is true
+        $this->logger->setNoticesEnabled((isset($this->config['log']['level']['notice']) ? $this->config['log']['level']['notice'] : true)); // Default: true
+        $this->logger->log(new SandboxCreationNotice($this->id, $this->config['debug_output']['notice']));
 
         // Do some basic sandbox configuration...
         $this->PHPSandbox->whitelistFunc('SandyPHP_version_info');
@@ -1054,7 +1058,10 @@ class SandyPHPSandbox {
     }
 
     public function run(string $code, bool $print_output = true) {
+        $execID = uniqid(); // This id is important for logging. It marks the start and end of the execution of any script. It is temporary.
+        $this->logger->log(new ScriptExecutionStartNotice($this->id, $execID, $this->config['debug_output']['notice']));
         $this->PHPSandbox->execute($this->static_include_files($code));
+        $this->logger->log(new ScriptExecutionEndNotice($this->id, $execID, $this->config['debug_output']['notice']));
         return ($print_output ? ob_get_contents() : ob_get_clean());
     }
 
@@ -1075,6 +1082,10 @@ class SandyPHPSandbox {
             return implode(';', $function_calls);
         }
         return false;
+    }
+
+    public function __destruct() {
+        $this->logger->log(new SandboxDestructionNotice($this->id, $this->config['debug_output']['notice']));
     }
 
 }
