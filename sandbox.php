@@ -8,12 +8,6 @@ require 'logger.php';
 require 'exceptions.php';
 require 'notices.php';
 
-function handleException(SandyPHPException $exception, bool $output_log, bool $debug_output) {
-    global $logger;
-    if(isset($this->config['log'])) $logger->logException($exception);
-    if($debug_output) echo $exception->getMessage();
-}
-
 require 'vendor/autoload.php';
 require 'querycheck.php';
 /*require 'SandyPHPVirtPDODriver.php'; // PDO is enabled by default, that's why I will assume it is installed. Otherwise it will throw an error anyway...
@@ -59,8 +53,8 @@ class SandyPHPSandbox {
     }
 
     protected function tailorClass(string $class) {
-        // This is bad code, I know... if anyone can find a better solution pls fix!
-        if(!class_exists($class.'_SANDBOX_'.$this->id)) eval(str_replace('SANDBOXCONFIG', json_encode($this->config['database']), str_replace('SANDBOXID', $this->id, file_get_contents($class.'.php'))));
+        // This is VERY bad code, I know... if anyone can find a better solution pls fix!
+        if(!class_exists($class.'_SANDBOX_'.$this->id)) eval(str_replace('SANDBOXLOGGERID', $this->logger->getID(), str_replace('SANDBOXCONFIG', json_encode($this->config['database']), str_replace('SANDBOXID', $this->id, file_get_contents($class.'.php')))));
     }
 
     protected function storage_access_granted($filename) {
@@ -136,6 +130,7 @@ class SandyPHPSandbox {
     }
 
     public function __construct($config_options) {
+        global $SandyPHP_LoggerManager;
         $this->config = $config_options;
         $this->id = uniqid();
 
@@ -145,7 +140,7 @@ class SandyPHPSandbox {
         $this->PHPSandbox = new \PHPSandbox\PHPSandbox();
 
         // Initialize the logging system
-        $this->logger = new Logger($this->config['log']['file']);
+        $this->logger = $SandyPHP_LoggerManager->createLoggerIfNotExists($this->config['log']['file']);
         $this->logger->setExceptionsEnabled((isset($this->config['log']['level']['exception']) ? $this->config['log']['level']['exception'] : true)); // Default value is true
         $this->logger->setNoticesEnabled((isset($this->config['log']['level']['notice']) ? $this->config['log']['level']['notice'] : true)); // Default: true
         $this->logger->log(new SandboxCreationNotice($this->id, $this->config['debug_output']['notice']));
@@ -1090,8 +1085,12 @@ class SandyPHPSandbox {
 
 }
 
+$SandyPHP_LoggerManager = new LoggerManager();
+
     $sbox = new SandyPHPSandbox(SANDBOX_CONFIG);
-    $sbox->runFile('testscript.sphp');
+    for($i = 0; $i < 10; $i++) {
+        $sbox->runFile('testscript.sphp');
+    }
 
     //ob_end_flush();
 
