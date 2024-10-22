@@ -31,7 +31,15 @@ class StorageAccessPolicyViolation extends SandyPHPException implements Throwabl
 
 class DatabaseAccessPolicyViolation extends SandyPHPException implements Throwable {
     public function __construct() {
-    $this->message = 'Database Access Policy Violation: The script tried to access a database resource it was not supposed to.';
+        $this->message = 'Database Access Policy Violation: The script tried to access a database resource it was not supposed to.';
+    }
+}
+
+class DatabaseActionPolicyViolation extends SandyPHPException implements Throwable {
+    protected string $action;
+    public function __construct(string $action) {
+        $this->message = 'Database Action Policy Violation: The script tried to execute an sql statement of the following category, which was denied: '.$action;
+        $this->action = $action;
     }
 }
 

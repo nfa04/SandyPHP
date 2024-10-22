@@ -16,8 +16,8 @@
         "mysql": {
             "hosts": ["localhost"],
             "database_names": ["testdb"],
-            "tables": ["a"],
-            "actions": ["SELECT"]
+            "tables": ["a", "b"],
+            "actions": ["SELECT", "ALTER", "BACKUP", "CREATE", "DELETE", "DROP", "INSERT", "LOAD", "LOCK", "OPTIMIZE", "PURGE", "RENAME", "REPAIR", "REPLACE", "SET", "SHOW", "TRUNCATE", "UPDATE"]
         }
     },
     "log": {

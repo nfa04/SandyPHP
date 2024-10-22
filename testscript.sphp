@@ -1,5 +1,9 @@
 <?php
 
-    new PDO('mysql:dbname=testdb;host=127.0.0.1');
-    new PDO('mysql:dbname=testdb;host=127.0.0.1');
+    // This script is used to run tests
+
+    $pdo = new PDO("mysql:host=localhost;dbname=testdb", "", "");
+    $pdo->query("DELETE * FROM a WHERE a=(SELECT a FROM c WHERE i=1)");
+
+
 ?>
