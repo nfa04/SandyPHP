@@ -8,9 +8,11 @@ SandyPHP uses [PHPSandbox](https://github.com/Corveda/PHPSandbox) to run any giv
   - Interprocess communication
   - Access to databases
 
-This is achieved by intercepting calls to functions, methods, etc. connected to any of these functions. Whenever SandyPHP has to refuse to execute this function call it will try to return a value that won't break most scripts.
+This is achieved by intercepting calls to functions, methods, etc. connected to any of these functions. Whenever SandyPHP has to refuse to execute this function call it will try to return a value that won't break most scripts if possible. Most function calls will, however, if refused, lead to an exception being thrown as mentioned below.
 
-SandyPHP also supports a system to log notices and exceptions caused when the script is running, this includes for example permission requests and violations.
+SandyPHP supports a system to log notices and exceptions caused when the script is running, this includes for example permission requests and violations.
 
 ## Disclaimer
 This software is meant for experimental purposes. I do NOT recommend running it on any public server and do NOT guarantee for its security in any way. Although I tried to make it as compatible as possible with normal PHP, there might be edge-cases, where scripts will break.
+
+This software does not make other precautionary measures (such as containerization) unnecessary. The usual measures should still be taken to protect users' data.
