@@ -9,7 +9,5 @@ final class MySQLIErrorDummy {
     }
 
 }
-/*
-handleException(new MYSQLINotFoundException());*/
 
 ?>

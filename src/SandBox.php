@@ -1,15 +1,14 @@
 <?php
 
-define('SANDBOX_CONFIG', json_decode(file_get_contents('exampleconfig.json'), true));
+namespace SandyPHP;
+
+//define('SANDBOX_CONFIG', json_decode(file_get_contents('exampleconfig.json'), true));
 define('SANDBOX_WHITELIST', json_decode(file_get_contents('whitelist.json'), true));
 define('SANDBOX_SUPPORTED_PDO_DRIVERS', array('mysql'));
 
-require 'logger.php';
-require 'exceptions.php';
-require 'notices.php';
-
-require 'vendor/autoload.php';
+require '../vendor/autoload.php';
 require 'querycheck.php';
+
 /*require 'SandyPHPVirtPDODriver.php'; // PDO is enabled by default, that's why I will assume it is installed. Otherwise it will throw an error anyway...
 if (function_exists('mysqli_init') && extension_loaded('mysqli')) require 'SandyPHPVirtMySQLIDriver.php';
 else require 'MYSQLIwarning.php';*/
@@ -1029,7 +1028,7 @@ class SandyPHPSandbox {
 
         $this->PHPSandbox->blacklistClass(['PDO' => 'PDO']);
         $this->PHPSandbox->blacklistClass(['mysqli' => 'mysqli']);
-        $this->PHPSandbox->blacklistClass(['mysqli_stmt' => 'mysqli_stmt']);        
+        $this->PHPSandbox->blacklistClass(['mysqli_stmt' => 'mysqli_stmt']);
 
         // Make sure these classes only exist if the respective driver is enabled
         if(isset($this->config['database']['mysql'])) {
@@ -1085,14 +1084,13 @@ class SandyPHPSandbox {
 
 }
 
-$SandyPHP_LoggerManager = new LoggerManager();
+$SandyPHP_LoggerManager = new Logger\LoggerManager();
 
-    $sbox = new SandyPHPSandbox(SANDBOX_CONFIG);
+    /*$sbox = new SandyPHPSandbox();
     for($i = 0; $i < 10; $i++) {
         $sbox->runFile('testscript.sphp');
     }
-
-    //ob_end_flush();
+    //ob_end_flush();*/
 
 echo "\nSandyPHP exited successfully and used ".(memory_get_peak_usage() / 1000000)."mb of RAM during peaks\n";
 ?>
