@@ -61,6 +61,7 @@ class SandBox {
 
     protected function storage_access_granted($filename) {
             if(basename($filename) == 'manifest.json' OR (isNetworkLocation($filename) AND !$this->network_access_granted()) OR !isAllowedWrapper($filename)) return false; // Applications are not allowed access to their manifest file, they can request configuration info instead
+            echo 'TEST';
             else if(file_is_within_folders($this->storage_get_realpath($filename), $this->config['permissions']['storage']) OR $this->config['permissions']['storage'][0] === '*') {
                 $this->logger->log(new Notices\StorageAccessNotice($this->storage_get_realpath($filename), $this->config['debug_output']['notice']));
                 return true;
