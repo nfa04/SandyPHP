@@ -61,7 +61,6 @@ class SandBox {
 
     protected function storage_access_granted($filename) {
             if(basename($filename) == 'manifest.json' OR (isNetworkLocation($filename) AND !$this->network_access_granted()) OR !isAllowedWrapper($filename)) return false; // Applications are not allowed access to their manifest file, they can request configuration info instead
-            echo 'TEST';
             else if(file_is_within_folders($this->storage_get_realpath($filename), $this->config['permissions']['storage']) OR $this->config['permissions']['storage'][0] === '*') {
                 $this->logger->log(new Notices\StorageAccessNotice($this->storage_get_realpath($filename), $this->config['debug_output']['notice']));
                 return true;
@@ -175,8 +174,8 @@ class SandBox {
         });
 
         // #2 file_put_contents
-        $this->PHPSandbox->defineFunc('file_put_contents', function(string $filename, $flags, $ctx = null) {
-            return ($this->storage_access_granted($filename) ? file_put_contents($this->storage_get_realpath($filename), $flags, $ctx) : false);
+        $this->PHPSandbox->defineFunc('file_put_contents', function(string $filename, mixed $data, $flags = null, $ctx = null) {
+            return ($this->storage_access_granted($filename) ? file_put_contents($this->storage_get_realpath($filename), $data, $flags, $ctx) : false);
         });
 
 
