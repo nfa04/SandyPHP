@@ -37,6 +37,7 @@ function isAllowedWrapper(string $filename) {
 function file_is_within_folders(string $filename, $allowedPaths) : bool {
     $match = false;
     foreach($allowedPaths as $allowedPath) {
+        var_dump($allowedPath);
         if(strncmp(realpath($filename), $allowedPath, strlen($allowedPath)) === 0) $match = true;
     }
     return $match;
