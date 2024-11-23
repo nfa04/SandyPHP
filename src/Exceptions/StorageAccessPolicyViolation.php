@@ -1,6 +1,6 @@
 <?php
 namespace SandyPHP\Exceptions;
-class StorageAccessPolicyViolation extends SandyPHPException implements Throwable {
+class StorageAccessPolicyViolation extends SandyPHPException {
     protected string $resource_id;
     public function __construct(string $resource_id) {
         $this->resource_id = $resource_id;

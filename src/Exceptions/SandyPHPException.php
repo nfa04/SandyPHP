@@ -1,6 +1,6 @@
 <?php
 namespace SandyPHP\Exceptions;
-class SandyPHPException extends Exception implements Throwable, Loggable {
+class SandyPHPException extends \Exception implements \Throwable, \SandyPHP\Logger\Loggable {
     protected $timestamp;
 
     public function __construct() {

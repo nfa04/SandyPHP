@@ -1,6 +1,6 @@
 <?php
 namespace SandyPHP\Notices;
-class SandyPHPNotice implements Loggable {
+class SandyPHPNotice implements \SandyPHP\Logger\Loggable {
     protected $stacktrace;
     protected $time;
     protected $message;

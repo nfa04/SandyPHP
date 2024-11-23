@@ -30,16 +30,19 @@ final class SandyPHPVirtPDODriver_SANDBOX_SANDBOXID extends PDO {
     }
 
     #[\Override]
+    #[\ReturnTypeWillChange]
     public function query(string $sql, ?int $fetchMode = null, mixed ...$fetchModeArgs) {
         return (SandyPHP\Utils\Queries\checkQuery($sql, $this->connectionType, $this->config, $this->loggerID) ? parent::query($sql, $fetchMode, $fetchModeArgs) : false);
     }
 
     #[\Override]
+    #[\ReturnTypeWillChange]
     public function exec(string $statement) {
         return (SandyPHP\Utils\Queries\checkQuery($statement, $this->connectionType, $this->config, $this->loggerID) ? parent::exec($statement) : false);
     }
 
     #[\Override]
+    #[\ReturnTypeWillChange]
     public function prepare(string $query, array $options = []) {
         return (SandyPHP\Utils\Queries\checkQuery($query, $this->connectionType, $this->config, $this->loggerID) ? parent::prepare($query, $options) : false);
     }
