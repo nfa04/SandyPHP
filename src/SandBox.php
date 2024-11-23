@@ -477,7 +477,7 @@ class SandBox {
             return ($this->storage_access_granted($target) AND $this->storage_access_granted($link) ? link($this->storage_get_realpath($target), $this->storage_get_realpath($link)) : false);
         });
 
-        $this->PHPSandbox->defineFunc('bzopen', function(string|resource $file, string $mode) {
+        $this->PHPSandbox->defineFunc('bzopen', function($file, string $mode) {
             return (($this->storage_access_granted($file) OR get_resource_type($file) == 'stream') ? bzopen((get_resource_type($file) == 'stream' ? $file : $this->storage_get_realpath($file)), $mode): false);
         });
 
@@ -513,7 +513,7 @@ class SandBox {
             return ($this->storage_access_granted($directory) ? chdir($this->storage_get_realpath($directory)) : false);
         });
 
-        $this->PHPSandbox->defineFunc('scandir', function(string $directory, int $sorting_order = SCANDIR_SORT_ASCENDING, ?resource $context = null) {
+        $this->PHPSandbox->defineFunc('scandir', function(string $directory, int $sorting_order = SCANDIR_SORT_ASCENDING, $context = null) {
             return ($this->storage_access_granted($directory) ? scandir($this->storage_get_realpath($directory), $sorting_order, $context) : false);
         });
 
@@ -710,11 +710,11 @@ class SandBox {
             return ($this->hostinfo_access_granted() ? posix_ctermid() : false);
         });
 
-        $this->PHPSandbox->defineFunc('posix_ttyname', function(resource|int $file_descriptor) {
+        $this->PHPSandbox->defineFunc('posix_ttyname', function(int $file_descriptor) {
             return ($this->hostinfo_access_granted() ? posix_ttyname($file_descriptor) : false);
         });
 
-        $this->PHPSandbox->defineFunc('posix_isatty', function(resource|int $file_descriptor) {
+        $this->PHPSandbox->defineFunc('posix_isatty', function(int $file_descriptor) {
             return ($this->hostinfo_access_granted() ? posix_isatty($file_descriptor) : false);
         });
 
@@ -788,7 +788,7 @@ class SandBox {
             return ($this->config['permissions']['headers'] ? http_response_code($response_code) : false);
         });
 
-        $this->PHPSandbox->defineFunc('get_headers', function(string $url, bool $associative = false, ?resource $context = null) {
+        $this->PHPSandbox->defineFunc('get_headers', function(string $url, bool $associative = false, $context = null) {
             return ($this->config['permissions']['headers'] ? get_headers($url, $associative = false, $context) : false);
         });
 
@@ -861,12 +861,12 @@ class SandBox {
         });
 
         // stream_socket_client
-        $this->PHPSandbox->defineFunc('stream_socket_client', function(string $address, int &$error_code = null, string &$error_message = null, ?float $timeout = null, int $flags = STREAM_CLIENT_CONNECT, ?resource $context = null) {
+        $this->PHPSandbox->defineFunc('stream_socket_client', function(string $address, int &$error_code = null, string &$error_message = null, ?float $timeout = null, int $flags = STREAM_CLIENT_CONNECT, $context = null) {
             return ($this->network_access_granted() ? stream_socket_client($address,  $error_code, $error_message, $timeout, $flags, $context) : false);
         });
 
         // stream_socket_server
-        $this->PHPSandbox->defineFunc('stream_socket_server', function(string $address, int &$error_code = null, string &$error_message = null, int $flags = STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, ?resource $context = null) {
+        $this->PHPSandbox->defineFunc('stream_socket_server', function(string $address, int &$error_code = null, string &$error_message = null, int $flags = STREAM_SERVER_BIND | STREAM_SERVER_LISTEN, $context = null) {
             return ($this->network_access_granted() ? stream_socket_server($address,  $error_code, $error_message, $flags, $context) : false);
         });
 
