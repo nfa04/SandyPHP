@@ -1084,12 +1084,4 @@ class SandBox {
     }
 
 }
-
-    /*$sbox = new SandyPHPSandbox();
-    for($i = 0; $i < 10; $i++) {
-        $sbox->runFile('testscript.sphp');
-    }
-    //ob_end_flush();*/
-
-echo "\nSandyPHP exited successfully and used ".(memory_get_peak_usage() / 1000000)."mb of RAM during peaks\n";
 ?>
